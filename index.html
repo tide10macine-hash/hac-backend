@@ -495,30 +495,7 @@
 
   // ─── Login ────────────────────────────────────────────────────────────────
 
-  document.getElementById('btn-diagnose').addEventListener('click', async () => {
-    const user = document.getElementById('hac-user').value.trim();
-    const pass = document.getElementById('hac-pass').value;
-    if (!user || !pass) { alert('Enter your username and password first, then click this button.'); return; }
-    const box = document.getElementById('diag-out');
-    const btn = document.getElementById('btn-diagnose');
-    box.style.display = 'block';
-    box.textContent = 'Running… this takes about 10 seconds…';
-    btn.disabled = true;
-    btn.textContent = 'Running…';
-    try {
-      const r = await fetch('/api/diagnose', {
-        method: 'POST', headers: {'Content-Type':'application/json'},
-        body: JSON.stringify({ username: user, password: pass }),
-      });
-      const d = await r.json();
-      box.textContent = JSON.stringify(d, null, 2);
-      btn.textContent = 'Done — copy the text above and send to Claude';
-    } catch(err) {
-      box.textContent = 'Error: ' + err.message;
-      btn.disabled = false;
-      btn.textContent = 'Run Diagnostic';
-    }
-  });
+  
 
   document.getElementById('btn-login').addEventListener('click', doLogin);
   document.getElementById('hac-pass').addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
