@@ -495,6 +495,26 @@
 
   // ─── Login ────────────────────────────────────────────────────────────────
 
+  // Diagnostic — hit /api/diagnose and show raw structure
+  document.addEventListener('keydown', async e => {
+    if (e.ctrlKey && e.shiftKey && e.key === 'D') {
+      const user = document.getElementById('hac-user').value.trim();
+      const pass = document.getElementById('hac-pass').value;
+      if (!user || !pass) { alert('Enter credentials first'); return; }
+      const box = document.getElementById('diag-out');
+      box.style.display = 'block';
+      box.textContent = 'Running diagnostics…';
+      try {
+        const r = await fetch('/api/diagnose', {
+          method: 'POST', headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({ username: user, password: pass }),
+        });
+        const d = await r.json();
+        box.textContent = JSON.stringify(d, null, 2);
+      } catch(err) { box.textContent = 'Error: ' + err.message; }
+    }
+  });
+
   document.getElementById('btn-login').addEventListener('click', doLogin);
   document.getElementById('hac-pass').addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
 
