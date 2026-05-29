@@ -38,7 +38,6 @@
 
     .app { width: 100%; max-width: 760px; }
 
-    /* ── Logo ── */
     .logo {
       display: flex; align-items: center; gap: 8px;
       font-size: 11px; font-weight: 600; letter-spacing: 0.1em;
@@ -46,11 +45,9 @@
     }
     .logo-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); }
 
-    /* ── Screens ── */
     .screen { display: none; }
     .screen.active { display: block; }
 
-    /* ── Login ── */
     .login-card {
       background: var(--surface); border: 1px solid var(--border);
       border-radius: var(--radius-lg); padding: 2rem; max-width: 480px; margin: 0 auto;
@@ -91,7 +88,6 @@
     .demo-link a { color: var(--green); text-decoration: none; font-weight: 500; }
     .demo-link a:hover { text-decoration: underline; }
 
-    /* ── Dashboard ── */
     .dash-header {
       display: flex; align-items: flex-start; justify-content: space-between;
       margin-bottom: 1.5rem; gap: 1rem;
@@ -107,7 +103,6 @@
     }
     .btn-ghost:hover { background: var(--surface); }
 
-    /* GPA summary cards */
     .gpa-grid {
       display: grid; grid-template-columns: repeat(3, 1fr);
       gap: 10px; margin-bottom: 1.5rem;
@@ -124,7 +119,6 @@
     .gpa-card .value.green { color: var(--green); }
     .gpa-card .sub-val { font-size: 11px; color: var(--text-faint); margin-top: 3px; }
 
-    /* Course table */
     .table-wrap {
       background: var(--surface); border: 1px solid var(--border);
       border-radius: var(--radius-lg); overflow-x: auto; margin-bottom: 1.5rem;
@@ -145,7 +139,6 @@
     tbody td { padding: 10px 12px; font-size: 13px; vertical-align: middle; white-space: nowrap; }
 
     .course-name { font-weight: 500; font-size: 13.5px; }
-    .course-sub  { font-size: 11px; color: var(--text-faint); margin-top: 1px; }
 
     .badge { display: inline-block; font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 20px; margin-left: 5px; vertical-align: middle; letter-spacing: 0.03em; }
     .badge-ap  { background: #fde8e8; color: #991b1b; }
@@ -161,7 +154,6 @@
     .sem-cell { background: #f9fafb; }
     .pts-cell  { font-weight: 600; color: var(--text-muted); font-size: 13px; }
 
-    /* Spinner */
     .spinner {
       display: inline-block; width: 17px; height: 17px;
       border: 2px solid var(--green-mid); border-top-color: var(--green);
@@ -169,10 +161,8 @@
     }
     @keyframes spin { to { transform: rotate(360deg); } }
 
-    /* Loading state */
     .loading-row td { padding: 2.5rem; text-align: center; color: var(--text-muted); font-size: 14px; }
 
-    /* What-if */
     .what-if-card {
       background: var(--surface); border: 1px solid var(--border);
       border-radius: var(--radius-lg); padding: 1.25rem 1.5rem; margin-bottom: 1.5rem;
@@ -192,7 +182,6 @@
     .wi-result .highlight { font-weight: 600; color: var(--green); }
     .wi-result .diff { font-size: 12px; color: var(--text-faint); margin-left: 4px; }
 
-    /* Scale legend */
     .scale-legend {
       background: var(--surface); border: 1px solid var(--border);
       border-radius: var(--radius-lg); padding: 1rem 1.25rem; margin-bottom: 1.5rem;
@@ -206,7 +195,6 @@
     .scale-chip strong { font-weight: 700; }
 
     .footer-note { font-size: 11.5px; color: var(--text-faint); text-align: center; line-height: 1.7; }
-    .footer-note a { color: var(--green); text-decoration: none; }
 
     @media (max-width: 520px) {
       .gpa-card .value { font-size: 22px; }
@@ -260,7 +248,6 @@
       <button class="btn-ghost" id="btn-logout">← Sign out</button>
     </div>
 
-    <!-- GPA summary -->
     <div class="gpa-grid">
       <div class="gpa-card">
         <div class="label">Year GPA</div>
@@ -279,7 +266,6 @@
       </div>
     </div>
 
-    <!-- Course table -->
     <div class="table-wrap">
       <div class="section-label">Grades by quarter</div>
       <table>
@@ -301,7 +287,6 @@
       </table>
     </div>
 
-    <!-- Scale explanation -->
     <div class="scale-legend">
       <h4>GPA Scale</h4>
       <div class="scale-row">
@@ -312,7 +297,6 @@
       </div>
     </div>
 
-    <!-- What-if -->
     <div class="what-if-card">
       <h3>What-if calculator</h3>
       <p class="desc">See how changing one Q4 grade would shift your GPA</p>
@@ -333,19 +317,15 @@
     </div>
     <pre id="debug-box" style="display:none;margin-top:0.75rem;background:#111;color:#4ade80;font-size:11px;padding:14px;border-radius:10px;overflow-x:auto;white-space:pre-wrap;line-height:1.6;"></pre>
 
-  </div><!-- /screen-dash -->
-</div><!-- /app -->
+  </div>
+</div>
 
 <script>
   let courseData = [];
 
-  // ─── Grade helpers ────────────────────────────────────────────────────────
-
   function courseLevel(name) {
     const n = (name || '').toLowerCase().trim();
-    // AP: starts with "ap " OR contains " ap " OR ends with " ap" OR has "ap " at word boundary
     if (/(?:^|\s)ap(?:\s|$)/.test(n)) return 'ap';
-    // Advanced / Adv
     if (/\badv(anced)?\b/.test(n)) return 'adv';
     return 'ol';
   }
@@ -354,7 +334,6 @@
     if (avg === null || avg === undefined || isNaN(avg)) return null;
     const level = courseLevel(name);
     const max   = level === 'ap' ? 6.0 : level === 'adv' ? 5.5 : 5.0;
-    // Round half-up, then apply scale
     const rounded = avg % 1 === 0.5 ? Math.ceil(avg) : Math.round(avg);
     return Math.max(0, Math.round((max - (100 - rounded) * 0.1) * 10) / 10);
   }
@@ -366,7 +345,6 @@
     return '';
   }
 
-  // Average two values; if one is null use the other; if both null return null
   function avg2(a, b) {
     const va = a !== null && a !== undefined && !isNaN(a);
     const vb = b !== null && b !== undefined && !isNaN(b);
@@ -387,16 +365,6 @@
     return `<span class="grade-pill g-f">${d}</span>`;
   }
 
-  // ─── GPA calculation ──────────────────────────────────────────────────────
-  //
-  // For each class:
-  //   sem1avg = (Q1 + Q2) / 2     → convert to GPA pts → that class contributes 1 unit to Sem1 GPA
-  //   sem2avg = (Q3 + Q4) / 2     → convert to GPA pts → that class contributes 1 unit to Sem2 GPA
-  //
-  // Sem1 GPA = sum(sem1 pts for all classes that have sem1 data) / count
-  // Sem2 GPA = sum(sem2 pts for all classes that have sem2 data) / count
-  // Year GPA = (Sem1 GPA + Sem2 GPA) / 2
-
   function semGPA(courses, sem) {
     const pts = courses.map(c => {
       const a = sem === 1 ? avg2(c.q1avg, c.q2avg) : avg2(c.q3avg, c.q4avg);
@@ -412,8 +380,6 @@
     if (s1 !== null && s2 !== null) return (s1 + s2) / 2;
     return s1 ?? s2;
   }
-
-  // ─── Render dashboard ─────────────────────────────────────────────────────
 
   function renderDash(name, level, courses) {
     courseData = courses;
@@ -469,8 +435,6 @@
     document.getElementById('wi-result').innerHTML = '';
   }
 
-  // ─── What-if calculator ───────────────────────────────────────────────────
-
   ['wi-grade', 'wi-course'].forEach(id =>
     document.getElementById(id).addEventListener('input', calcWhatIf)
   );
@@ -492,10 +456,6 @@
       ? ((after - before) >= 0 ? '+' : '') + (after - before).toFixed(2) : '';
     result.innerHTML = `New year GPA: <span class="highlight">${aStr}</span> <span class="diff">(${diff} from ${bStr})</span>`;
   }
-
-  // ─── Login ────────────────────────────────────────────────────────────────
-
-  
 
   document.getElementById('btn-login').addEventListener('click', doLogin);
   document.getElementById('hac-pass').addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
@@ -530,7 +490,6 @@
 
       const data = await res.json();
 
-      // Normalise grades: ensure q1avg/q2avg/q3avg/q4avg are numbers or null
       const courses = (data.courses || []).map(c => ({
         name:  c.name || 'Unknown',
         q1avg: num(c.q1avg),
@@ -542,7 +501,6 @@
 
       if (!courses.length) throw new Error('No grade data found. Check your credentials or try again.');
 
-      // Format student name: HAC returns "LAST, FIRST MIDDLE" → show "First Last"
       let studentName = '', gradeLevel = '';
       const s = data.student || {};
       if (s.name && s.name.trim()) {
@@ -550,7 +508,6 @@
         if (raw.includes(',')) {
           const [last, rest] = raw.split(',');
           const first = (rest || '').trim().split(/\s+/)[0] || '';
-          // Title-case each part
           const tc = w => w ? w.charAt(0).toUpperCase() + w.slice(1).toLowerCase() : '';
           studentName = `${tc(first)} ${tc(last)}`.trim();
         } else {
@@ -578,8 +535,6 @@
     return isNaN(n) ? null : n;
   }
 
-  // ─── Demo data ────────────────────────────────────────────────────────────
-
   document.getElementById('btn-demo').addEventListener('click', e => {
     e.preventDefault();
     showDash('Demo Student', 'Grade 10 · Frisco ISD', [
@@ -592,8 +547,6 @@
       { name: 'Computer Science Prin',  q1avg: 90, q2avg: 91, q3avg: 88, q4avg: 90 },
     ]);
   });
-
-  // ─── Screen switching ─────────────────────────────────────────────────────
 
   function showDash(name, level, courses) {
     document.getElementById('screen-login').classList.remove('active');
