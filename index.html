@@ -11,19 +11,18 @@
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     :root {
-      --green: #1D9E75;
-      --green-dark: #0F6E56;
-      --green-light: #E1F5EE;
-      --green-mid: #9FE1CB;
-      --text: #1a1a1a;
-      --text-muted: #6b7280;
-      --text-faint: #9ca3af;
-      --bg: #f8f9fa;
-      --surface: #ffffff;
-      --border: rgba(0,0,0,0.1);
-      --border-strong: rgba(0,0,0,0.18);
-      --radius: 10px;
-      --radius-lg: 14px;
+      --green:       #1D9E75;
+      --green-dark:  #0F6E56;
+      --green-mid:   #9FE1CB;
+      --text:        #1a1a1a;
+      --text-muted:  #6b7280;
+      --text-faint:  #9ca3af;
+      --bg:          #f3f4f6;
+      --surface:     #ffffff;
+      --border:      rgba(0,0,0,0.09);
+      --border-strong: rgba(0,0,0,0.16);
+      --radius:      10px;
+      --radius-lg:   16px;
     }
 
     body {
@@ -34,807 +33,568 @@
       display: flex;
       align-items: flex-start;
       justify-content: center;
-      padding: 2rem 1rem 4rem;
+      padding: 2rem 1rem 5rem;
     }
 
-    .app {
-      width: 100%;
-      max-width: 620px;
-    }
+    .app { width: 100%; max-width: 760px; }
 
+    /* ── Logo ── */
     .logo {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      font-size: 12px;
-      font-weight: 600;
-      letter-spacing: 0.1em;
-      text-transform: uppercase;
-      color: var(--text-muted);
-      margin-bottom: 2.5rem;
+      display: flex; align-items: center; gap: 8px;
+      font-size: 11px; font-weight: 600; letter-spacing: 0.1em;
+      text-transform: uppercase; color: var(--text-muted); margin-bottom: 2.5rem;
     }
+    .logo-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); }
 
-    .logo-dot {
-      width: 9px;
-      height: 9px;
-      border-radius: 50%;
-      background: var(--green);
-    }
-
-    /* ── SCREENS ── */
+    /* ── Screens ── */
     .screen { display: none; }
     .screen.active { display: block; }
 
-    /* ── LOGIN ── */
+    /* ── Login ── */
     .login-card {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: var(--radius-lg);
-      padding: 2rem;
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius-lg); padding: 2rem; max-width: 480px; margin: 0 auto;
     }
-
-    h1 {
-      font-size: 24px;
-      font-weight: 600;
-      margin-bottom: 0.4rem;
-    }
-
-    .subtitle {
-      font-size: 15px;
-      color: var(--text-muted);
-      margin-bottom: 1.75rem;
-      line-height: 1.6;
-    }
+    h1 { font-size: 23px; font-weight: 600; margin-bottom: 0.35rem; }
+    .subtitle { font-size: 14px; color: var(--text-muted); margin-bottom: 1.5rem; line-height: 1.6; }
 
     .warning-box {
-      display: flex;
-      gap: 10px;
-      background: #fffbeb;
-      border: 1px solid #fcd34d;
-      border-radius: var(--radius);
-      padding: 12px 14px;
-      font-size: 13px;
-      color: #92400e;
-      margin-bottom: 1.75rem;
-      line-height: 1.5;
+      display: flex; gap: 10px; background: #fffbeb; border: 1px solid #fcd34d;
+      border-radius: var(--radius); padding: 11px 13px; font-size: 12.5px; color: #92400e;
+      margin-bottom: 1.5rem; line-height: 1.5;
     }
-
     .warning-box svg { flex-shrink: 0; margin-top: 1px; }
 
-    .field { margin-bottom: 1.1rem; }
-    .field label { display: block; font-size: 13px; font-weight: 500; color: var(--text-muted); margin-bottom: 6px; }
-
+    .field { margin-bottom: 1rem; }
+    .field label { display: block; font-size: 12px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-muted); margin-bottom: 5px; }
     .field input {
-      width: 100%;
-      font-family: 'DM Sans', sans-serif;
-      font-size: 15px;
-      padding: 10px 14px;
-      border: 1px solid var(--border-strong);
-      border-radius: var(--radius);
-      background: var(--surface);
-      color: var(--text);
+      width: 100%; font-family: 'DM Sans', sans-serif; font-size: 15px;
+      padding: 10px 13px; border: 1px solid var(--border-strong);
+      border-radius: var(--radius); background: var(--surface); color: var(--text);
       transition: border-color 0.15s, box-shadow 0.15s;
     }
-
-    .field input:focus {
-      outline: none;
-      border-color: var(--green);
-      box-shadow: 0 0 0 3px rgba(29,158,117,0.15);
-    }
+    .field input:focus { outline: none; border-color: var(--green); box-shadow: 0 0 0 3px rgba(29,158,117,0.14); }
 
     .btn-primary {
-      width: 100%;
-      font-family: 'DM Sans', sans-serif;
-      font-size: 15px;
-      font-weight: 600;
-      padding: 11px;
-      background: var(--green);
-      color: white;
-      border: none;
-      border-radius: var(--radius);
-      cursor: pointer;
-      margin-top: 0.5rem;
+      width: 100%; font-family: 'DM Sans', sans-serif; font-size: 15px; font-weight: 600;
+      padding: 11px; background: var(--green); color: #fff; border: none;
+      border-radius: var(--radius); cursor: pointer; margin-top: 0.4rem;
       transition: background 0.15s, transform 0.1s;
     }
-
-    .btn-primary:hover { background: var(--green-dark); }
+    .btn-primary:hover  { background: var(--green-dark); }
     .btn-primary:active { transform: scale(0.99); }
-    .btn-primary:disabled { opacity: 0.55; cursor: not-allowed; transform: none; }
+    .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
 
-    .error-msg {
-      display: none;
-      align-items: center;
-      gap: 7px;
-      color: #dc2626;
-      font-size: 13px;
-      margin-top: 12px;
-    }
+    .error-msg { display: none; align-items: center; gap: 7px; color: #dc2626; font-size: 13px; margin-top: 11px; }
 
-    .demo-link {
-      text-align: center;
-      margin-top: 1.25rem;
-      font-size: 13px;
-      color: var(--text-muted);
-    }
-
+    .demo-link { text-align: center; margin-top: 1.2rem; font-size: 13px; color: var(--text-muted); }
     .demo-link a { color: var(--green); text-decoration: none; font-weight: 500; }
     .demo-link a:hover { text-decoration: underline; }
 
-    /* ── DASHBOARD ── */
+    /* ── Dashboard ── */
     .dash-header {
-      display: flex;
-      align-items: flex-start;
-      justify-content: space-between;
-      margin-bottom: 1.5rem;
-      gap: 1rem;
+      display: flex; align-items: flex-start; justify-content: space-between;
+      margin-bottom: 1.5rem; gap: 1rem;
     }
-
-    .dash-header h2 { font-size: 20px; font-weight: 600; }
-    .dash-header .grade-level { font-size: 13px; color: var(--text-muted); margin-top: 2px; }
+    .dash-header h2    { font-size: 20px; font-weight: 600; }
+    .dash-header .sub  { font-size: 13px; color: var(--text-muted); margin-top: 2px; }
 
     .btn-ghost {
-      font-family: 'DM Sans', sans-serif;
-      font-size: 13px;
-      padding: 7px 14px;
-      border: 1px solid var(--border-strong);
-      border-radius: var(--radius);
-      background: transparent;
-      color: var(--text-muted);
-      cursor: pointer;
-      white-space: nowrap;
-      transition: background 0.15s;
+      font-family: 'DM Sans', sans-serif; font-size: 13px; padding: 7px 13px;
+      border: 1px solid var(--border-strong); border-radius: var(--radius);
+      background: transparent; color: var(--text-muted); cursor: pointer;
+      white-space: nowrap; transition: background 0.15s;
     }
+    .btn-ghost:hover { background: var(--surface); }
 
-    .btn-ghost:hover { background: var(--bg); }
-
-    /* GPA cards */
+    /* GPA summary cards */
     .gpa-grid {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 10px;
-      margin-bottom: 1.5rem;
+      display: grid; grid-template-columns: repeat(3, 1fr);
+      gap: 10px; margin-bottom: 1.5rem;
     }
-
     .gpa-card {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      padding: 1rem;
-      text-align: center;
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius-lg); padding: 1rem 1.1rem;
     }
-
     .gpa-card .label {
-      font-size: 11px;
-      font-weight: 600;
-      letter-spacing: 0.06em;
-      text-transform: uppercase;
-      color: var(--text-muted);
-      margin-bottom: 6px;
+      font-size: 11px; font-weight: 600; letter-spacing: 0.07em;
+      text-transform: uppercase; color: var(--text-muted); margin-bottom: 5px;
     }
-
-    .gpa-card .value {
-      font-size: 26px;
-      font-weight: 600;
-      color: var(--text);
-    }
-
+    .gpa-card .value { font-size: 28px; font-weight: 600; color: var(--text); line-height: 1; }
     .gpa-card .value.green { color: var(--green); }
+    .gpa-card .sub-val { font-size: 11px; color: var(--text-faint); margin-top: 3px; }
 
-    /* Courses table */
+    /* Course table */
     .table-wrap {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: var(--radius-lg);
-      overflow-x: auto;
-      margin-bottom: 1.5rem;
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius-lg); overflow-x: auto; margin-bottom: 1.5rem;
     }
-
     .section-label {
-      font-size: 12px;
-      font-weight: 600;
-      letter-spacing: 0.07em;
-      text-transform: uppercase;
-      color: var(--text-muted);
-      padding: 14px 16px 10px;
-      border-bottom: 1px solid var(--border);
+      font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase;
+      color: var(--text-muted); padding: 13px 16px 9px; border-bottom: 1px solid var(--border);
     }
-
-    table { width: 100%; border-collapse: collapse; }
-
+    table  { width: 100%; border-collapse: collapse; }
     thead th {
-      text-align: left;
-      font-size: 11px;
-      font-weight: 600;
-      letter-spacing: 0.06em;
-      text-transform: uppercase;
-      color: var(--text-faint);
-      padding: 10px 10px;
-      border-bottom: 1px solid var(--border);
-      white-space: nowrap;
+      text-align: left; font-size: 11px; font-weight: 600; letter-spacing: 0.05em;
+      text-transform: uppercase; color: var(--text-faint);
+      padding: 9px 12px; border-bottom: 1px solid var(--border); white-space: nowrap;
     }
-
+    thead th.sem-col { color: #6b7280; background: #f9fafb; }
     tbody tr:not(:last-child) td { border-bottom: 1px solid var(--border); }
+    tbody tr:hover td { background: #fafafa; }
+    tbody td { padding: 10px 12px; font-size: 13px; vertical-align: middle; white-space: nowrap; }
 
-    tbody td {
-      padding: 10px 10px;
-      font-size: 13px;
-      vertical-align: middle;
-      white-space: nowrap;
-    }
+    .course-name { font-weight: 500; font-size: 13.5px; }
+    .course-sub  { font-size: 11px; color: var(--text-faint); margin-top: 1px; }
 
-    .course-name { font-weight: 500; }
-
-    .badge {
-      display: inline-block;
-      font-size: 10px;
-      font-weight: 600;
-      padding: 2px 7px;
-      border-radius: 20px;
-      margin-left: 6px;
-      vertical-align: middle;
-    }
+    .badge { display: inline-block; font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 20px; margin-left: 5px; vertical-align: middle; letter-spacing: 0.03em; }
     .badge-ap  { background: #fde8e8; color: #991b1b; }
     .badge-adv { background: #e0f2fe; color: #075985; }
 
-    .grade-pill {
-      display: inline-block;
-      font-size: 12px;
-      font-weight: 600;
-      padding: 3px 10px;
-      border-radius: 20px;
-    }
-
+    .grade-pill { display: inline-block; font-size: 12px; font-weight: 600; padding: 3px 10px; border-radius: 20px; min-width: 44px; text-align: center; }
     .g-a { background: #dcfce7; color: #166534; }
     .g-b { background: #dbeafe; color: #1e40af; }
     .g-c { background: #fef9c3; color: #854d0e; }
     .g-d { background: #fee2e2; color: #991b1b; }
-    .g-f { background: #fee2e2; color: #7f1d1d; }
+    .g-f { background: #fecaca; color: #7f1d1d; }
 
-    .pts { color: var(--text-muted); font-size: 13px; }
+    .sem-cell { background: #f9fafb; }
+    .pts-cell  { font-weight: 600; color: var(--text-muted); font-size: 13px; }
 
-    /* Loading */
-    .loading-row td {
-      text-align: center;
-      padding: 2.5rem !important;
-      color: var(--text-muted);
-      font-size: 14px;
-    }
-
+    /* Spinner */
     .spinner {
-      display: inline-block;
-      width: 18px;
-      height: 18px;
-      border: 2px solid var(--green-mid);
-      border-top-color: var(--green);
-      border-radius: 50%;
-      animation: spin 0.7s linear infinite;
-      vertical-align: middle;
-      margin-right: 8px;
+      display: inline-block; width: 17px; height: 17px;
+      border: 2px solid var(--green-mid); border-top-color: var(--green);
+      border-radius: 50%; animation: spin 0.7s linear infinite; vertical-align: middle; margin-right: 7px;
     }
-
     @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Loading state */
+    .loading-row td { padding: 2.5rem; text-align: center; color: var(--text-muted); font-size: 14px; }
 
     /* What-if */
     .what-if-card {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: var(--radius-lg);
-      padding: 1.25rem 1.5rem;
-      margin-bottom: 1.5rem;
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius-lg); padding: 1.25rem 1.5rem; margin-bottom: 1.5rem;
     }
-
-    .what-if-card h3 { font-size: 15px; font-weight: 600; margin-bottom: 3px; }
-    .what-if-card p  { font-size: 13px; color: var(--text-muted); margin-bottom: 14px; }
-
-    .wi-row { display: flex; gap: 10px; align-items: center; }
-
-    .wi-row select,
-    .wi-row input[type="number"] {
-      font-family: 'DM Sans', sans-serif;
-      font-size: 14px;
-      padding: 8px 12px;
-      border: 1px solid var(--border-strong);
-      border-radius: var(--radius);
-      background: var(--surface);
-      color: var(--text);
+    .what-if-card h3 { font-size: 14px; font-weight: 600; margin-bottom: 2px; }
+    .what-if-card .desc { font-size: 12.5px; color: var(--text-muted); margin-bottom: 13px; }
+    .wi-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+    .wi-row select, .wi-row input[type="number"] {
+      font-family: 'DM Sans', sans-serif; font-size: 14px; padding: 8px 11px;
+      border: 1px solid var(--border-strong); border-radius: var(--radius);
+      background: var(--surface); color: var(--text);
     }
-
-    .wi-row select:focus,
-    .wi-row input[type="number"]:focus {
-      outline: none;
-      border-color: var(--green);
-      box-shadow: 0 0 0 3px rgba(29,158,117,0.15);
-    }
-
-    .wi-row select { flex: 2; }
-    .wi-row input  { flex: 1; min-width: 90px; }
-
-    .wi-result {
-      margin-top: 12px;
-      font-size: 14px;
-      color: var(--text-muted);
-      min-height: 22px;
-    }
-
+    .wi-row select:focus, .wi-row input:focus { outline: none; border-color: var(--green); box-shadow: 0 0 0 3px rgba(29,158,117,0.12); }
+    .wi-row select { flex: 2; min-width: 180px; }
+    .wi-row input  { flex: 1; min-width: 110px; }
+    .wi-result { margin-top: 11px; font-size: 14px; color: var(--text-muted); min-height: 20px; }
     .wi-result .highlight { font-weight: 600; color: var(--green); }
     .wi-result .diff { font-size: 12px; color: var(--text-faint); margin-left: 4px; }
 
-    .footer-note {
-      font-size: 12px;
-      color: var(--text-faint);
-      text-align: center;
-      line-height: 1.6;
+    /* Scale legend */
+    .scale-legend {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius-lg); padding: 1rem 1.25rem; margin-bottom: 1.5rem;
     }
+    .scale-legend h4 { font-size: 11px; font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase; color: var(--text-muted); margin-bottom: 10px; }
+    .scale-row { display: flex; gap: 6px; flex-wrap: wrap; }
+    .scale-chip {
+      font-size: 12px; padding: 4px 11px; border-radius: 20px; font-weight: 500;
+      border: 1px solid var(--border);
+    }
+    .scale-chip strong { font-weight: 700; }
 
-    /* Responsive */
-    @media (max-width: 480px) {
-      .gpa-grid { grid-template-columns: repeat(3, 1fr); }
-      .gpa-card .value { font-size: 20px; }
-      .wi-row { flex-wrap: wrap; }
-      .wi-row select, .wi-row input { flex: 1 1 100%; }
+    .footer-note { font-size: 11.5px; color: var(--text-faint); text-align: center; line-height: 1.7; }
+    .footer-note a { color: var(--green); text-decoration: none; }
+
+    @media (max-width: 520px) {
+      .gpa-card .value { font-size: 22px; }
+      .gpa-grid { gap: 8px; }
     }
   </style>
 </head>
 <body>
-  <div class="app">
-    <div class="logo">
-      <span class="logo-dot"></span>
-      Frisco ISD GPA Calculator
-    </div>
+<div class="app">
+  <div class="logo"><span class="logo-dot"></span>Frisco ISD GPA Calculator</div>
 
-    <!-- ── LOGIN SCREEN ── -->
-    <div class="screen active" id="screen-login">
-      <div class="login-card">
-        <h1>Check your GPA</h1>
-        <p class="subtitle">Sign in with your HAC credentials to auto-load your current grades and calculate your GPA.</p>
+  <!-- LOGIN -->
+  <div class="screen active" id="screen-login">
+    <div class="login-card">
+      <h1>Check your GPA</h1>
+      <p class="subtitle">Sign in with your HAC credentials. Your grades are fetched directly from hac.friscoisd.org.</p>
 
-        <div class="warning-box">
-          <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/></svg>
-          <span>Your credentials go directly to the community HAC API and are <strong>never stored</strong> by this app. Use at your own discretion. This app is not affiliated with Frisco ISD.</span>
-        </div>
-
-        <div class="field">
-          <label for="hac-user">Student ID (HAC username)</label>
-          <input type="text" id="hac-user" placeholder="e.g. 123456" autocomplete="username" />
-        </div>
-        <div class="field">
-          <label for="hac-pass">Password</label>
-          <input type="password" id="hac-pass" placeholder="Your FISD password" autocomplete="current-password" />
-        </div>
-
-        <button class="btn-primary" id="btn-login">Load my grades</button>
-
-        <div class="error-msg" id="login-error">
-          <svg width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
-          <span id="error-text">Login failed. Check your credentials and try again.</span>
-        </div>
-
-        <p class="demo-link">Don't want to log in? <a href="#" id="btn-demo">Load demo data instead</a></p>
-
-      </div>
-    </div>
-
-    <!-- ── DASHBOARD SCREEN ── -->
-    <div class="screen" id="screen-dash">
-      <div class="dash-header">
-        <div>
-          <h2 id="student-name">Your Grades</h2>
-          <div class="grade-level" id="grade-level"></div>
-        </div>
-        <button class="btn-ghost" id="btn-logout">&#8592; Sign out</button>
+      <div class="warning-box">
+        <svg width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/></svg>
+        <span>Your credentials are sent directly to HAC and are <strong>never stored</strong>. Not affiliated with Frisco ISD.</span>
       </div>
 
-      <div class="gpa-grid">
-        <div class="gpa-card">
-          <div class="label">Year GPA</div>
-          <div class="value green" id="gpa-weighted">—</div>
-        </div>
-        <div class="gpa-card">
-          <div class="label">Sem 1 GPA</div>
-          <div class="value" id="gpa-sem1">—</div>
-        </div>
-        <div class="gpa-card">
-          <div class="label">Sem 2 GPA</div>
-          <div class="value" id="gpa-sem2">—</div>
-        </div>
+      <div class="field">
+        <label for="hac-user">Student ID</label>
+        <input type="text" id="hac-user" placeholder="e.g. 123456" autocomplete="username" />
+      </div>
+      <div class="field">
+        <label for="hac-pass">Password</label>
+        <input type="password" id="hac-pass" placeholder="Your FISD password" autocomplete="current-password" />
       </div>
 
-      <div class="table-wrap">
-        <div class="section-label" id="table-label">All Quarters</div>
-        <table>
-          <thead>
-            <tr>
-              <th>Course</th>
-              <th>Q1</th>
-              <th>Q2</th>
-              <th>Sem 1</th>
-              <th>Q3</th>
-              <th>Q4</th>
-              <th>Sem 2</th>
-              <th>GPA pts</th>
-            </tr>
-          </thead>
-          <tbody id="courses-body">
-            <tr class="loading-row">
-              <td colspan="3"><span class="spinner"></span> Loading grades…</td>
-            </tr>
-          </tbody>
-        </table>
+      <button class="btn-primary" id="btn-login">Load my grades</button>
+
+      <div class="error-msg" id="login-error">
+        <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+        <span id="error-text">Login failed.</span>
       </div>
 
-      <div class="what-if-card">
-        <h3>What-if calculator</h3>
-        <p>See how a grade change would affect your GPA</p>
-        <div class="wi-row">
-          <select id="wi-course"></select>
-          <input type="number" id="wi-grade" placeholder="New avg" min="0" max="100" step="1" />
-        </div>
-        <div class="wi-result" id="wi-result"></div>
-      </div>
-
-      <p class="footer-note">
-        GPA scale: AP = 6.0 max, Adv = 5.5 max, On-level = 5.0 max. Each point below 100 = −0.1 GPA.<br>
-        Year GPA = (Sem 1 GPA + Sem 2 GPA) ÷ 2. Each Sem GPA = sum of class pts ÷ classes.<br>
-        Data from hac.friscoisd.org via the community <a href="https://github.com/SumitNalavade/FriscoISDHACAPI" target="_blank" rel="noopener" style="color:var(--green)">FriscoISD HAC API</a>.
-        Not affiliated with Frisco ISD.
-      </p>
-
-      <!-- Temp debug: raw API dump (no credentials shown) -->
-      <div style="margin-top:1rem;text-align:center;">
-        <button class="btn-ghost" id="btn-showraw" style="font-size:12px;">Show raw API data (for debugging)</button>
-      </div>
-      <div id="raw-dump" style="display:none;margin-top:0.75rem;background:#1a1a1a;color:#4ade80;font-family:monospace;font-size:11px;padding:14px;border-radius:10px;max-height:400px;overflow-y:auto;white-space:pre-wrap;word-break:break-all;line-height:1.6;"></div>
+      <p class="demo-link">No login? <a href="#" id="btn-demo">Try demo data</a></p>
     </div>
   </div>
 
-  <script>
-    // ── State ──
-    let courseData = []; // Q4 (current) courses with q3avg merged in
+  <!-- DASHBOARD -->
+  <div class="screen" id="screen-dash">
 
-    // ── Grade helpers ──
-    // Scale: AP max=6.0, Adv/Advanced max=5.5, On-level max=5.0
-    // Formula: GPA = max - (100 - roundedAvg) * 0.1, floor 0.0
-    // .5 rounds UP before calculation
+    <div class="dash-header">
+      <div>
+        <h2 id="student-name">Your Grades</h2>
+        <div class="sub" id="grade-level"></div>
+      </div>
+      <button class="btn-ghost" id="btn-logout">← Sign out</button>
+    </div>
 
-    function courseLevel(name) {
-      const n = (name || '').toLowerCase();
-      if (n.includes(' ap') || n.startsWith('ap ') || n.startsWith('ap-')) return 'ap';
-      if (n.includes('adv') || n.includes('advanced')) return 'adv';
-      return 'ol';
+    <!-- GPA summary -->
+    <div class="gpa-grid">
+      <div class="gpa-card">
+        <div class="label">Year GPA</div>
+        <div class="value green" id="gpa-year">—</div>
+        <div class="sub-val">Sem 1 + Sem 2 ÷ 2</div>
+      </div>
+      <div class="gpa-card">
+        <div class="label">Semester 1</div>
+        <div class="value" id="gpa-sem1">—</div>
+        <div class="sub-val">Q1 + Q2 averaged</div>
+      </div>
+      <div class="gpa-card">
+        <div class="label">Semester 2</div>
+        <div class="value" id="gpa-sem2">—</div>
+        <div class="sub-val">Q3 + Q4 averaged</div>
+      </div>
+    </div>
+
+    <!-- Course table -->
+    <div class="table-wrap">
+      <div class="section-label">Grades by quarter</div>
+      <table>
+        <thead>
+          <tr>
+            <th>Class</th>
+            <th>Q1</th>
+            <th>Q2</th>
+            <th class="sem-col">Sem 1</th>
+            <th>Q3</th>
+            <th>Q4</th>
+            <th class="sem-col">Sem 2</th>
+            <th>GPA pts</th>
+          </tr>
+        </thead>
+        <tbody id="courses-body">
+          <tr class="loading-row"><td colspan="8"><span class="spinner"></span>Loading grades…</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Scale explanation -->
+    <div class="scale-legend">
+      <h4>GPA Scale</h4>
+      <div class="scale-row">
+        <span class="scale-chip" style="background:#fde8e8;color:#991b1b;"><strong>AP</strong> — max 6.0</span>
+        <span class="scale-chip" style="background:#e0f2fe;color:#075985;"><strong>Advanced</strong> — max 5.5</span>
+        <span class="scale-chip" style="background:#f3f4f6;color:#374151;"><strong>On-Level</strong> — max 5.0</span>
+        <span class="scale-chip" style="background:#f9fafb;color:#6b7280;">Each point below 100 = −0.1</span>
+      </div>
+    </div>
+
+    <!-- What-if -->
+    <div class="what-if-card">
+      <h3>What-if calculator</h3>
+      <p class="desc">See how changing one Q4 grade would shift your GPA</p>
+      <div class="wi-row">
+        <select id="wi-course"></select>
+        <input type="number" id="wi-grade" placeholder="New Q4 grade" min="0" max="100" step="1" />
+      </div>
+      <div class="wi-result" id="wi-result"></div>
+    </div>
+
+    <p class="footer-note">
+      Year GPA = (Sem 1 + Sem 2) ÷ 2 &nbsp;·&nbsp; Each Sem = average of class GPA points for that semester.<br>
+      Each class avg = (Q1+Q2)÷2 for Sem 1, (Q3+Q4)÷2 for Sem 2, then converted to GPA points.<br>
+      Data scraped live from hac.friscoisd.org. Not affiliated with Frisco ISD.
+    </p>
+
+  </div><!-- /screen-dash -->
+</div><!-- /app -->
+
+<script>
+  let courseData = [];
+
+  // ─── Grade helpers ────────────────────────────────────────────────────────
+
+  function courseLevel(name) {
+    const n = (name || '').toLowerCase();
+    if (/\bap\b/.test(n) || n.startsWith('ap ') || n.includes(' ap ')) return 'ap';
+    if (n.includes('adv') || n.includes('advanced')) return 'adv';
+    return 'ol';
+  }
+
+  function toPoints(avg, name) {
+    if (avg === null || avg === undefined || isNaN(avg)) return null;
+    const level = courseLevel(name);
+    const max   = level === 'ap' ? 6.0 : level === 'adv' ? 5.5 : 5.0;
+    // Round half-up, then apply scale
+    const rounded = avg % 1 === 0.5 ? Math.ceil(avg) : Math.round(avg);
+    return Math.max(0, Math.round((max - (100 - rounded) * 0.1) * 10) / 10);
+  }
+
+  function levelBadge(name) {
+    const l = courseLevel(name);
+    if (l === 'ap')  return '<span class="badge badge-ap">AP</span>';
+    if (l === 'adv') return '<span class="badge badge-adv">Adv</span>';
+    return '';
+  }
+
+  // Average two values; if one is null use the other; if both null return null
+  function avg2(a, b) {
+    const va = a !== null && a !== undefined && !isNaN(a);
+    const vb = b !== null && b !== undefined && !isNaN(b);
+    if (va && vb) return (a + b) / 2;
+    if (va) return a;
+    if (vb) return b;
+    return null;
+  }
+
+  function gradePill(v) {
+    if (v === null || v === undefined || isNaN(v))
+      return '<span style="color:#9ca3af;font-size:13px;">—</span>';
+    const d = v.toFixed(1);
+    if (v >= 90) return `<span class="grade-pill g-a">${d}</span>`;
+    if (v >= 80) return `<span class="grade-pill g-b">${d}</span>`;
+    if (v >= 70) return `<span class="grade-pill g-c">${d}</span>`;
+    if (v >= 60) return `<span class="grade-pill g-d">${d}</span>`;
+    return `<span class="grade-pill g-f">${d}</span>`;
+  }
+
+  // ─── GPA calculation ──────────────────────────────────────────────────────
+  //
+  // For each class:
+  //   sem1avg = (Q1 + Q2) / 2     → convert to GPA pts → that class contributes 1 unit to Sem1 GPA
+  //   sem2avg = (Q3 + Q4) / 2     → convert to GPA pts → that class contributes 1 unit to Sem2 GPA
+  //
+  // Sem1 GPA = sum(sem1 pts for all classes that have sem1 data) / count
+  // Sem2 GPA = sum(sem2 pts for all classes that have sem2 data) / count
+  // Year GPA = (Sem1 GPA + Sem2 GPA) / 2
+
+  function semGPA(courses, sem) {
+    const pts = courses.map(c => {
+      const a = sem === 1 ? avg2(c.q1avg, c.q2avg) : avg2(c.q3avg, c.q4avg);
+      return toPoints(a, c.name);
+    }).filter(p => p !== null);
+    if (!pts.length) return null;
+    return pts.reduce((s, p) => s + p, 0) / pts.length;
+  }
+
+  function yearGPA(courses) {
+    const s1 = semGPA(courses, 1);
+    const s2 = semGPA(courses, 2);
+    if (s1 !== null && s2 !== null) return (s1 + s2) / 2;
+    return s1 ?? s2;
+  }
+
+  // ─── Render dashboard ─────────────────────────────────────────────────────
+
+  function renderDash(name, level, courses) {
+    courseData = courses;
+
+    document.getElementById('student-name').textContent = name || 'Your Grades';
+    document.getElementById('grade-level').textContent  = level || '';
+
+    const s1  = semGPA(courses, 1);
+    const s2  = semGPA(courses, 2);
+    const yr  = yearGPA(courses);
+
+    document.getElementById('gpa-year').textContent  = yr  !== null ? yr.toFixed(2)  : '—';
+    document.getElementById('gpa-sem1').textContent  = s1  !== null ? s1.toFixed(2)  : '—';
+    document.getElementById('gpa-sem2').textContent  = s2  !== null ? s2.toFixed(2)  : '—';
+
+    const tbody = document.getElementById('courses-body');
+    const sel   = document.getElementById('wi-course');
+    tbody.innerHTML = '';
+    sel.innerHTML   = '';
+
+    if (!courses.length) {
+      tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:2.5rem;color:#9ca3af">No courses found.</td></tr>';
+      return;
     }
 
-    function toPoints(avg, name) {
-      if (avg === null || isNaN(avg)) return null;
-      const level = courseLevel(name);
-      const max = level === 'ap' ? 6.0 : level === 'adv' ? 5.5 : 5.0;
-      const frac = avg % 1;
-      const rounded = frac === 0.5 ? Math.ceil(avg) : Math.round(avg);
-      const pts = max - (100 - rounded) * 0.1;
-      return Math.max(0, Math.round(pts * 10) / 10);
+    courses.forEach((c, i) => {
+      const s1a  = avg2(c.q1avg, c.q2avg);
+      const s2a  = avg2(c.q3avg, c.q4avg);
+      const yA   = avg2(s1a, s2a);
+      const pts  = toPoints(yA, c.name);
+
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>
+          <div class="course-name">${c.name}${levelBadge(c.name)}</div>
+        </td>
+        <td>${gradePill(c.q1avg)}</td>
+        <td>${gradePill(c.q2avg)}</td>
+        <td class="sem-cell">${gradePill(s1a)}</td>
+        <td>${gradePill(c.q3avg)}</td>
+        <td>${gradePill(c.q4avg)}</td>
+        <td class="sem-cell">${gradePill(s2a)}</td>
+        <td class="pts-cell">${pts !== null ? pts.toFixed(1) : '—'}</td>
+      `;
+      tbody.appendChild(tr);
+
+      const opt = document.createElement('option');
+      opt.value = i;
+      opt.textContent = c.name;
+      sel.appendChild(opt);
+    });
+
+    document.getElementById('wi-result').innerHTML = '';
+  }
+
+  // ─── What-if calculator ───────────────────────────────────────────────────
+
+  ['wi-grade', 'wi-course'].forEach(id =>
+    document.getElementById(id).addEventListener('input', calcWhatIf)
+  );
+
+  function calcWhatIf() {
+    const sel    = document.getElementById('wi-course');
+    const newQ4  = parseFloat(document.getElementById('wi-grade').value);
+    const result = document.getElementById('wi-result');
+    if (!sel.options.length || isNaN(newQ4) || newQ4 < 0 || newQ4 > 100) {
+      result.innerHTML = ''; return;
+    }
+    const idx      = parseInt(sel.value);
+    const modified = courseData.map((c, i) => i === idx ? { ...c, q4avg: newQ4 } : c);
+    const before   = yearGPA(courseData);
+    const after    = yearGPA(modified);
+    const bStr     = before !== null ? before.toFixed(2) : '—';
+    const aStr     = after  !== null ? after.toFixed(2)  : '—';
+    const diff     = (before !== null && after !== null)
+      ? ((after - before) >= 0 ? '+' : '') + (after - before).toFixed(2) : '';
+    result.innerHTML = `New year GPA: <span class="highlight">${aStr}</span> <span class="diff">(${diff} from ${bStr})</span>`;
+  }
+
+  // ─── Login ────────────────────────────────────────────────────────────────
+
+  document.getElementById('btn-login').addEventListener('click', doLogin);
+  document.getElementById('hac-pass').addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
+
+  async function doLogin() {
+    const user  = document.getElementById('hac-user').value.trim();
+    const pass  = document.getElementById('hac-pass').value;
+    const errEl = document.getElementById('login-error');
+    const btn   = document.getElementById('btn-login');
+
+    errEl.style.display = 'none';
+    if (!user || !pass) {
+      document.getElementById('error-text').textContent = 'Please enter your student ID and password.';
+      errEl.style.display = 'flex'; return;
     }
 
-    function levelLabel(name) {
-      const l = courseLevel(name);
-      if (l === 'ap')  return '<span class="badge badge-ap">AP</span>';
-      if (l === 'adv') return '<span class="badge badge-adv">Adv</span>';
-      return '';
-    }
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner" style="border-color:#9FE1CB;border-top-color:#fff;"></span> Loading grades…';
 
-    function semAvg(a, b) {
-      // Average two quarter grades; if one is missing use the other
-      const va = (a !== null && !isNaN(a));
-      const vb = (b !== null && !isNaN(b));
-      if (va && vb) return (a + b) / 2;
-      if (va) return a;
-      if (vb) return b;
-      return null;
-    }
-
-    function semGPAPoints(courses, qField) {
-      // Returns array of GPA points for each course in this semester
-      return courses.map(c => {
-        const avg = qField === 'sem1'
-          ? c.sem1avg
-          : semAvg(c.q3avg ?? null, c.avg);
-        return toPoints(avg, c.name);
-      }).filter(p => p !== null);
-    }
-
-    function calcSemGPA(courses, qField) {
-      const pts = semGPAPoints(courses, qField);
-      if (!pts.length) return null;
-      return pts.reduce((a, b) => a + b, 0) / pts.length;
-    }
-
-    function calcYearGPA(courses) {
-      // Year GPA = average of Sem1 GPA and Sem2 GPA
-      // Sem1 GPA = sum of each class's (Q1+Q2)/2 GPA points / number of classes
-      // Sem2 GPA = sum of each class's (Q3+Q4)/2 GPA points / number of classes
-      // Year GPA = (Sem1 GPA + Sem2 GPA) / 2
-      // If only one semester has data, return that semester's GPA alone
-      const s1 = calcSemGPA(courses, 'sem1');
-      const s2 = calcSemGPA(courses, 'sem2');
-      if (s1 !== null && s2 !== null) return (s1 + s2) / 2;
-      if (s1 !== null) return s1;
-      if (s2 !== null) return s2;
-      return null;
-    }
-
-    function gradePill(avg) {
-      if (avg === null || isNaN(avg)) return '<span style="color:#9ca3af">—</span>';
-      const disp = avg.toFixed(1);
-      if (avg >= 90) return `<span class="grade-pill g-a">${disp}</span>`;
-      if (avg >= 80) return `<span class="grade-pill g-b">${disp}</span>`;
-      if (avg >= 70) return `<span class="grade-pill g-c">${disp}</span>`;
-      if (avg >= 60) return `<span class="grade-pill g-d">${disp}</span>`;
-      return `<span class="grade-pill g-f">${disp}</span>`;
-    }
-
-    // ── Render dashboard ──
-    function renderDash(name, level, courses) {
-      courseData = courses;
-
-      document.getElementById('student-name').textContent = name || 'Your Grades';
-      document.getElementById('grade-level').textContent = level || '';
-
-      // Sem 1 GPA
-      const s1 = calcSemGPA(courses, 'sem1');
-      // Sem 2 GPA
-      const s2 = calcSemGPA(courses, 'sem2');
-      // Year GPA = average of both sems (only count sems that exist)
-      const yr = calcYearGPA(courses);
-      const yearGPA = yr !== null ? yr.toFixed(2) : '—';
-
-      document.getElementById('gpa-weighted').textContent = yearGPA;
-      document.getElementById('gpa-sem1').textContent = s1 !== null ? s1.toFixed(2) : '—';
-      document.getElementById('gpa-sem2').textContent = s2 !== null ? s2.toFixed(2) : '—';
-
-      const tbody = document.getElementById('courses-body');
-      const sel   = document.getElementById('wi-course');
-      tbody.innerHTML = '';
-      sel.innerHTML   = '';
-
-      if (!courses.length) {
-        tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:2rem;color:#9ca3af">No courses found.</td></tr>';
-        return;
-      }
-
-      courses.forEach((c, i) => {
-        const badge  = levelLabel(c.name);
-        const q1pill = gradePill(c.q1avg ?? null);
-        const q2pill = gradePill(c.q2avg ?? null);
-        const s1a    = semAvg(c.q1avg ?? null, c.q2avg ?? null);
-        const s1pill = gradePill(s1a);
-        const q3pill = gradePill(c.q3avg ?? null);
-        const q4pill = gradePill(c.q4avg ?? c.avg ?? null);
-        const s2a    = semAvg(c.q3avg ?? null, c.q4avg ?? c.avg ?? null);
-        const s2pill = gradePill(s2a);
-        // GPA pts based on year average (avg of sem1 and sem2 avg)
-        const yearA  = semAvg(s1a, s2a);
-        const pts    = yearA !== null ? toPoints(yearA, c.name).toFixed(1) : '—';
-
-        const tr = document.createElement('tr');
-        tr.innerHTML = `
-          <td><span class="course-name">${c.name}</span>${badge}</td>
-          <td>${q1pill}</td>
-          <td>${q2pill}</td>
-          <td>${s1pill}</td>
-          <td>${q3pill}</td>
-          <td>${q4pill}</td>
-          <td>${s2pill}</td>
-          <td class="pts">${pts}</td>
-        `;
-        tbody.appendChild(tr);
-
-        const opt = document.createElement('option');
-        opt.value = i;
-        opt.textContent = c.name;
-        sel.appendChild(opt);
+    try {
+      const res = await fetch('/api/grades', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: user, password: pass }),
       });
 
-      document.getElementById('wi-result').innerHTML = '';
-    }
-
-    // ── What-if calculator ──
-    document.getElementById('wi-grade').addEventListener('input', calcWhatIf);
-    document.getElementById('wi-course').addEventListener('change', calcWhatIf);
-
-    function calcWhatIf() {
-      const sel    = document.getElementById('wi-course');
-      const newAvg = parseFloat(document.getElementById('wi-grade').value);
-      const result = document.getElementById('wi-result');
-
-      if (!sel.options.length || isNaN(newAvg) || newAvg < 0 || newAvg > 100) {
-        result.innerHTML = '';
-        return;
+      if (res.status === 401) throw new Error('Incorrect username or password.');
+      if (!res.ok) {
+        const e = await res.json().catch(() => ({}));
+        throw new Error(e.error || 'Server error — try again in a moment.');
       }
 
-      const idx      = parseInt(sel.value);
-      const modified = courseData.map((c, i) => i === idx ? { ...c, avg: newAvg } : c);
+      const data = await res.json();
 
-      // Recalc year GPA with modified Q4
-      function yearGPAStr(courses) {
-        const yr = calcYearGPA(courses);
-        return yr !== null ? yr.toFixed(2) : '—';
+      // Normalise grades: ensure q1avg/q2avg/q3avg/q4avg are numbers or null
+      const courses = (data.courses || []).map(c => ({
+        name:  c.name || 'Unknown',
+        q1avg: num(c.q1avg),
+        q2avg: num(c.q2avg),
+        q3avg: num(c.q3avg),
+        q4avg: num(c.q4avg ?? c.avg),
+      })).filter(c => c.name !== 'Unknown' &&
+        [c.q1avg, c.q2avg, c.q3avg, c.q4avg].some(v => v !== null));
+
+      if (!courses.length) throw new Error('No grade data found. Check your credentials or try again.');
+
+      // Format student name: "LAST, FIRST MIDDLE" → "FIRST LAST"
+      let studentName = '', gradeLevel = '';
+      const s = data.student || {};
+      if (s.name) {
+        const parts = s.name.split(',');
+        studentName = parts.length > 1
+          ? `${parts[1].trim().split(' ')[0]} ${parts[0].trim()}`
+          : s.name;
       }
+      if (s.grade) gradeLevel = `Grade ${s.grade}${s.campus ? ' · ' + s.campus : ''}`;
 
-      const origGPA = yearGPAStr(courseData);
-      const newGPA  = yearGPAStr(modified);
-      const diff    = (parseFloat(newGPA) - parseFloat(origGPA)).toFixed(2);
-      const sign    = diff >= 0 ? '+' : '';
+      showDash(studentName, gradeLevel, courses);
 
-      result.innerHTML = `New year GPA: <span class="highlight">${newGPA}</span> <span class="diff">(${sign}${diff} from ${origGPA})</span>`;
-    }
-
-    // ── Parse quarter data ──
-    function cleanName(raw) {
-      if (!raw) return 'Unknown';
-      // Strip course code prefix like "ELA14300B - 4    " or "MTH45300A - 1    "
-      const match = raw.match(/^[A-Z0-9]+\s*-\s*\d+\s+(.+)$/);
-      return match ? match[1].trim() : raw.trim();
-    }
-
-    function parseQuarter(data) {
-      const arr = data.pastClasses || data.currentClasses || [];
-      return arr.map(c => ({
-        rawName: c.name || '',
-        name: cleanName(c.name),
-        avg: (() => {
-          const g = c.grade ?? '';
-          const v = parseFloat(g);
-          return (g === '' || isNaN(v)) ? null : v;
-        })()
-      })).filter(c => c.name && c.name !== 'Unknown');
-    }
-
-    // Match courses across quarters by cleaned name (fuzzy: strip S1/S2 suffix)
-    function baseName(name) {
-      return name.replace(/\s+S[12](@\w+)?$/i, '').trim().toLowerCase();
-    }
-
-    // ── Login ──
-    document.getElementById('btn-login').addEventListener('click', doLogin);
-    document.getElementById('hac-pass').addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
-
-    async function doLogin() {
-      const user  = document.getElementById('hac-user').value.trim();
-      const pass  = document.getElementById('hac-pass').value;
-      const errEl = document.getElementById('login-error');
-      const btn   = document.getElementById('btn-login');
-
-      errEl.style.display = 'none';
-      if (!user || !pass) {
-        document.getElementById('error-text').textContent = 'Please enter your student ID and password.';
-        errEl.style.display = 'flex';
-        return;
-      }
-
-      btn.disabled = true;
-      btn.innerHTML = '<span class="spinner" style="border-color:#9FE1CB;border-top-color:#fff;"></span> Loading grades…';
-
-      try {
-        // POST to our own backend which logs into HAC and scrapes the real report card
-        const apiRes = await fetch('/api/grades', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ username: user, password: pass }),
-        });
-
-        if (apiRes.status === 401) throw new Error('Incorrect username or password.');
-        if (!apiRes.ok) {
-          const e = await apiRes.json().catch(() => ({}));
-          throw new Error(e.error || 'Server error — try again.');
-        }
-
-        const data = await apiRes.json();
-        window._rawDebug = data;
-
-        const courses = (data.courses || []).map(c => ({
-          ...c,
-          rawName: c.name,
-          avg:     c.q4avg ?? c.avg,
-          sem1avg: semAvg(c.q1avg, c.q2avg),
-        }));
-
-        if (!courses.length) throw new Error('No grade data found. Check your credentials or try again.');
-
-        // Format student name
-        let studentName = '', gradeLevel = '';
-        const s = data.student || {};
-        if (s.name) {
-          const parts = s.name.split(',');
-          studentName = parts.length > 1
-            ? `${parts[1].trim().split(' ')[0]} ${parts[0].trim()}`
-            : s.name;
-        }
-        if (s.grade) gradeLevel = `Grade ${s.grade}${s.campus ? ' · ' + s.campus : ''}`;
-
-        showDash(studentName, gradeLevel, courses);
-
-      } catch (e) {
-        document.getElementById('error-text').textContent = e.message || 'Something went wrong. Please try again.';
-        errEl.style.display = 'flex';
-        btn.disabled = false;
-        btn.textContent = 'Load my grades';
-      }
-    }
-
-    // ── Demo data ──
-    document.getElementById('btn-demo').addEventListener('click', e => {
-      e.preventDefault();
-      loadDemo();
-    });
-
-    function loadDemo() {
-      const demo = [
-        { name: 'AP Calculus BC',             q1avg: 93.0, q2avg: 92.0, q3avg: 91.0, q4avg: 94.5 },
-        { name: 'AP English Language',         q1avg: 87.0, q2avg: 87.0, q3avg: 85.0, q4avg: 88.0 },
-        { name: 'Advanced Chemistry',          q1avg: 90.0, q2avg: 90.0, q3avg: 89.0, q4avg: 91.2 },
-        { name: 'AP World History',            q1avg: 86.0, q2avg: 86.0, q3avg: 83.0, q4avg: 85.7 },
-        { name: 'Spanish 3',                   q1avg: 91.0, q2avg: 92.0, q3avg: 92.0, q4avg: 93.0 },
-        { name: 'PE Athletics',                q1avg: 97.0, q2avg: 97.0, q3avg: 96.0, q4avg: 97.0 },
-        { name: 'Computer Science Principles', q1avg: 90.0, q2avg: 90.0, q3avg: 88.0, q4avg: 89.5 },
-      ].map(c => ({
-        ...c,
-        avg:      c.q4avg,
-        sem1avg:  semAvg(c.q1avg, c.q2avg),
-      }));
-      showDash('Demo Student', 'Grade 11', demo);
-    }
-
-    // ── Screen switching ──
-    function showDash(name, level, courses) {
-      document.getElementById('screen-login').classList.remove('active');
-      document.getElementById('screen-dash').classList.add('active');
-      renderDash(name, level, courses);
-    }
-
-    document.getElementById('btn-showraw').addEventListener('click', () => {
-      const box = document.getElementById('raw-dump');
-      if (box.style.display === 'none') {
-        const d = window._rawDebug;
-        if (!d) { box.textContent = 'No data yet — log in first.'; }
-        else {
-          const rc = d.reportcard;
-          const headers = rc?.headers || [];
-          const firstRow = rc?.data?.[0] || [];
-          const rows = rc?.data?.length || 0;
-          function dumpPast(label, data) {
-            if (!data) return label + ': not loaded yet\n';
-            const arr = data.pastClasses || data.currentClasses || data.classes || [];
-            const keys = Object.keys(data);
-            const first = arr[0];
-            return label + '\n' +
-              '  top-level keys: ' + JSON.stringify(keys) + '\n' +
-              '  array length: ' + arr.length + '\n' +
-              '  first item: ' + JSON.stringify(first || 'empty') + '\n\n';
-          }
-          box.textContent =
-            '=== /currentclasses (Q4 live) ===\n' +
-            '  keys: ' + JSON.stringify(Object.keys(d.currentclasses || {})) + '\n' +
-            '  first item (trimmed): ' + JSON.stringify({name:(d.currentclasses?.currentClasses||[])[0]?.name, grade:(d.currentclasses?.currentClasses||[])[0]?.grade}) + '\n\n' +
-            dumpPast('=== /pastclasses?quarter=1 ===', d.pastQ1) +
-            dumpPast('=== /pastclasses?quarter=2 ===', d.pastQ2) +
-            dumpPast('=== /pastclasses?quarter=3 ===', d.pastQ3) +
-            '--- Copy everything above and send to Claude ---';
-        }
-        box.style.display = 'block';
-      } else {
-        box.style.display = 'none';
-      }
-    });
-
-    document.getElementById('btn-logout').addEventListener('click', () => {
-      document.getElementById('screen-dash').classList.remove('active');
-      document.getElementById('screen-login').classList.add('active');
-      document.getElementById('hac-user').value = '';
-      document.getElementById('hac-pass').value = '';
-      document.getElementById('login-error').style.display = 'none';
-      courseData = [];
-      const btn = document.getElementById('btn-login');
+    } catch (e) {
+      document.getElementById('error-text').textContent = e.message || 'Something went wrong.';
+      errEl.style.display = 'flex';
       btn.disabled = false;
       btn.textContent = 'Load my grades';
-    });
-  </script>
+    }
+  }
+
+  function num(v) {
+    if (v === null || v === undefined) return null;
+    const n = parseFloat(v);
+    return isNaN(n) ? null : n;
+  }
+
+  // ─── Demo data ────────────────────────────────────────────────────────────
+
+  document.getElementById('btn-demo').addEventListener('click', e => {
+    e.preventDefault();
+    showDash('Demo Student', 'Grade 10 · Frisco ISD', [
+      { name: 'English 1 Adv',         q1avg: 99, q2avg: 98, q3avg: 97, q4avg: 99 },
+      { name: 'Algebra 2 Adv',         q1avg: 95, q2avg: 94, q3avg: 93, q4avg: 96 },
+      { name: 'AP World History',       q1avg: 88, q2avg: 87, q3avg: 86, q4avg: 89 },
+      { name: 'Chemistry Adv',          q1avg: 91, q2avg: 90, q3avg: 89, q4avg: 92 },
+      { name: 'Spanish 2',              q1avg: 93, q2avg: 94, q3avg: 92, q4avg: 95 },
+      { name: 'PE Athletics',           q1avg: 97, q2avg: 97, q3avg: 96, q4avg: 98 },
+      { name: 'Computer Science Prin',  q1avg: 90, q2avg: 91, q3avg: 88, q4avg: 90 },
+    ]);
+  });
+
+  // ─── Screen switching ─────────────────────────────────────────────────────
+
+  function showDash(name, level, courses) {
+    document.getElementById('screen-login').classList.remove('active');
+    document.getElementById('screen-dash').classList.add('active');
+    renderDash(name, level, courses);
+  }
+
+  document.getElementById('btn-logout').addEventListener('click', () => {
+    document.getElementById('screen-dash').classList.remove('active');
+    document.getElementById('screen-login').classList.add('active');
+    document.getElementById('hac-user').value = '';
+    document.getElementById('hac-pass').value = '';
+    document.getElementById('login-error').style.display = 'none';
+    courseData = [];
+    const btn = document.getElementById('btn-login');
+    btn.disabled = false;
+    btn.textContent = 'Load my grades';
+  });
+</script>
 </body>
 </html>
