@@ -92,43 +92,46 @@ function parseRCGrades(html) {
   const $ = cheerio.load(html);
   const grades = {};
 
-  // HAC report card: the main table has class sg-asp-table or is inside sg-content-grid
-  // Each data row: first cell = course name, other cells = grades for that period
-  // The "average" for the selected period is in a specific column
-  // Strategy: find rows with a numeric grade (50-100) in any non-first cell
+  // HAC report card rows: each row has a course code cell then grade cells
+  // We accept any row where first cell looks like a course code (letters+digits)
+  // or contains a " - " separator (e.g. "ELA12200B - 2  English 1 Adv")
 
-  $('table tr').each((rowIdx, row) => {
+  $('table tr').each((_, row) => {
     const $row = $(row);
-    // Skip header rows
-    if ($row.find('th').length > 0) return;
+    if ($row.find('th').length > 0) return; // skip header rows
 
     const cells = $row.find('td');
     if (cells.length < 2) return;
 
     const courseName = $(cells[0]).text().trim();
-    if (!courseName || courseName.length < 5) return;
-    // Must look like a course code: letters+numbers
-    if (!courseName.match(/^[A-Z]{2,3}\d/)) return;
+    if (!courseName || courseName.length < 4) return;
 
-    // Find the average grade — look for a cell with class containing "avg" or just a numeric value
-    // The report card for a single period shows just one grade column
+    // Accept rows that look like course entries
+    const looksLikeCourse =
+      /^[A-Z]{2,4}\d/.test(courseName) ||          // starts with dept code + digit
+      / - \d/.test(courseName) ||                    // has " - N" (period number)
+      /[A-Z]{2,}\d{4,}/.test(courseName);           // embedded long course code
+
+    if (!looksLikeCourse) return;
+
+    // Find the grade: prefer a cell whose text is purely numeric (grade value)
+    // Walk cells right-to-left so we get the most recent / relevant grade first
     let avg = null;
+    const cellArr = cells.toArray();
+    for (let i = cellArr.length - 1; i >= 1; i--) {
+      const txt = $(cellArr[i]).text().trim();
+      if (/^\d{2,3}(\.\d+)?$/.test(txt)) {
+        const n = parseFloat(txt);
+        if (n >= 40 && n <= 100) { avg = n; break; }
+      }
+    }
 
-    // Try cells with explicit avg class first
-    $row.find('td[class*="avg"], td[class*="Avg"], td[class*="grade"]').each((_, td) => {
-      const txt = $(td).text().trim();
-      const n = parseFloat(txt);
-      if (!isNaN(n) && n >= 0 && n <= 100) { avg = n; return false; }
-    });
-
-    // If no avg class found, take the last numeric cell that looks like a grade
+    // Also check for cells with grade-related class names
     if (avg === null) {
-      cells.each((cellIdx, td) => {
-        if (cellIdx === 0) return;
+      $row.find('[class*="avg"],[class*="Avg"],[class*="grade"],[class*="Grade"]').each((_, td) => {
         const txt = $(td).text().trim();
-        if (txt.match(/^\d{2,3}(\.\d+)?$/) && parseFloat(txt) <= 100) {
-          avg = parseFloat(txt);
-        }
+        const n = parseFloat(txt);
+        if (!isNaN(n) && n >= 40 && n <= 100) { avg = n; return false; }
       });
     }
 
