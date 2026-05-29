@@ -54,8 +54,8 @@ async function login(client, username, password) {
 
   const finalUrl = postRes.request?.res?.responseUrl || postRes.config?.url || '';
   const $post = cheerio.load(postRes.data);
-  const errText = $post('.validation-summary-errors li, #ErrorMessage, .error').text().trim().toLowerCase();
-  if (errText && (errText.includes('invalid') || errText.includes('incorrect') || errText.includes('failed'))) {
+  const errText = $post('.validation-summary-errors li, #ErrorMessage').text().trim().toLowerCase();
+  if (errText && (errText.includes('invalid') || errText.includes('incorrect'))) {
     throw new Error('Incorrect username or password.');
   }
   const onLoginPage = finalUrl.includes('LogOn') || finalUrl.includes('logon');
@@ -64,6 +64,7 @@ async function login(client, username, password) {
   if (onLoginPage && !hasContent && !hasLogout) throw new Error('Incorrect username or password.');
 }
 
+// Extract ASP.NET hidden form fields from a loaded cheerio page
 function extractFormFields($) {
   return {
     __EVENTTARGET:        $('input[name="__EVENTTARGET"]').val() || '',
@@ -74,67 +75,101 @@ function extractFormFields($) {
   };
 }
 
+// Get all dropdown options for reporting periods
 function getReportingPeriods($) {
   const periods = [];
   $('#plnMain_ddlRCRuns option').each((_, el) => {
-    periods.push({ value: $(el).attr('value'), label: $(el).text().trim() });
+    const value = $(el).attr('value');
+    const label = $(el).text().trim();
+    if (value && label) periods.push({ value, label });
   });
   return periods;
 }
 
-// Parse one report card page — returns { rawCourseName: avg }
-function parseRCPage(html) {
+// Parse grades from ONE report card page
+// Returns { rawCourseName: gradeNumber }
+function parseRCGrades(html) {
   const $ = cheerio.load(html);
   const grades = {};
 
-  $('table').each((_, tbl) => {
-    const rows = $(tbl).find('tr');
-    if (rows.length < 2) return;
+  // HAC report card: the main table has class sg-asp-table or is inside sg-content-grid
+  // Each data row: first cell = course name, other cells = grades for that period
+  // The "average" for the selected period is in a specific column
+  // Strategy: find rows with a numeric grade (50-100) in any non-first cell
 
-    const headerText = rows.first().text().toLowerCase();
-    if (!headerText.includes('course') && !headerText.includes('class') && !headerText.includes('avg') && !headerText.includes('average')) return;
+  $('table tr').each((rowIdx, row) => {
+    const $row = $(row);
+    // Skip header rows
+    if ($row.find('th').length > 0) return;
 
-    rows.each((i, row) => {
-      if (i === 0) return;
-      const cells = $(row).find('td');
-      if (cells.length < 2) return;
-      const name = cells.first().text().trim();
-      if (!name || name.length < 3) return;
+    const cells = $row.find('td');
+    if (cells.length < 2) return;
 
-      let avg = null;
-      cells.each((j, td) => {
-        if (j === 0) return;
+    const courseName = $(cells[0]).text().trim();
+    if (!courseName || courseName.length < 5) return;
+    // Must look like a course code: letters+numbers
+    if (!courseName.match(/^[A-Z]{2,3}\d/)) return;
+
+    // Find the average grade — look for a cell with class containing "avg" or just a numeric value
+    // The report card for a single period shows just one grade column
+    let avg = null;
+
+    // Try cells with explicit avg class first
+    $row.find('td[class*="avg"], td[class*="Avg"], td[class*="grade"]').each((_, td) => {
+      const txt = $(td).text().trim();
+      const n = parseFloat(txt);
+      if (!isNaN(n) && n >= 0 && n <= 100) { avg = n; return false; }
+    });
+
+    // If no avg class found, take the last numeric cell that looks like a grade
+    if (avg === null) {
+      cells.each((cellIdx, td) => {
+        if (cellIdx === 0) return;
         const txt = $(td).text().trim();
         if (txt.match(/^\d{2,3}(\.\d+)?$/) && parseFloat(txt) <= 100) {
           avg = parseFloat(txt);
-          return false;
         }
       });
+    }
 
-      if (avg !== null) grades[name] = avg;
-    });
+    if (avg !== null) {
+      grades[courseName] = avg;
+    }
   });
 
   return grades;
 }
 
-async function fetchRCForPeriod(client, periodValue, formFields) {
+// Fetch report card page for a specific period by posting the dropdown change
+// IMPORTANT: each postback returns a NEW page with NEW form fields — we re-parse them each time
+async function fetchPeriod(client, periodValue) {
+  // First GET the page fresh to get current form state
+  const getRes = await client.get(RC_URL, {
+    headers: { 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8', 'Referer': RC_URL }
+  });
+  const $ = cheerio.load(getRes.data);
+  const fields = extractFormFields($);
+
+  // Now POST the dropdown change
   const body = new URLSearchParams({
-    ...formFields,
+    ...fields,
     '__EVENTTARGET':   'ctl00$plnMain$ddlRCRuns',
     '__EVENTARGUMENT': '',
     'ctl00$plnMain$ddlRCRuns': periodValue,
   });
-  const res = await client.post(RC_URL, body.toString(), {
+
+  const postRes = await client.post(RC_URL, body.toString(), {
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded',
       'Referer': RC_URL,
       'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
     },
   });
-  return res.data;
+
+  return postRes.data;
 }
 
+// Parse classwork page for live averages
 function parseCurrentClasses(html) {
   const $ = cheerio.load(html);
   const classes = {};
@@ -156,9 +191,12 @@ function parseStudentInfo(html) {
   return { name, grade, campus };
 }
 
+// Strip course code prefix: "MTH45300A - 3    AP Calculus AB S1" → "AP Calculus AB S1"
 function cleanName(raw) {
   if (!raw) return '';
-  const m = raw.match(/^[A-Z0-9]+\s*-\s*\d+\s+(.+)$/);
+  // Pattern: CODE - PERIOD    NAME
+  const m = raw.match(/^[A-Z0-9]+\s*-\s*\d+\s{2,}(.+)$/) ||
+            raw.match(/^[A-Z0-9]+\s*-\s*\d+\s+(.+)$/);
   return m ? m[1].trim() : raw.trim();
 }
 
@@ -175,46 +213,45 @@ app.post('/api/grades', async (req, res) => {
   try {
     await login(client, username, password);
 
-    // Get initial report card page
+    // Get initial report card page to find available periods
     const rcInitRes = await client.get(RC_URL, {
       headers: { 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8' }
     });
-    const rcInitHtml  = rcInitRes.data;
-    const $rcInit     = cheerio.load(rcInitHtml);
-    const periods     = getReportingPeriods($rcInit);
-    const formFields  = extractFormFields($rcInit);
+    const $rcInit  = cheerio.load(rcInitRes.data);
+    const periods  = getReportingPeriods($rcInit);
 
-    console.log('Periods found:', periods.map(p => p.label));
+    console.log('Periods:', periods.map(p => `${p.label}=${p.value}`).join(', '));
 
-    // Figure out which period is currently shown
-    const selectedVal   = $rcInit('#plnMain_ddlRCRuns option[selected]').attr('value') || periods[periods.length - 1]?.value;
+    // Which period is currently selected?
+    const selectedVal   = $rcInit('#plnMain_ddlRCRuns option[selected]').attr('value') || periods[periods.length-1]?.value;
     const selectedLabel = periods.find(p => p.value === selectedVal)?.label || String(periods.length);
 
+    // Parse initial page (currently selected period)
     const periodGrades = {};
-    periodGrades[selectedLabel] = parseRCPage(rcInitHtml);
-    console.log(`Period ${selectedLabel} grades:`, Object.keys(periodGrades[selectedLabel]).length);
+    periodGrades[selectedLabel] = parseRCGrades(rcInitRes.data);
+    console.log(`Period ${selectedLabel}: ${Object.keys(periodGrades[selectedLabel]).length} courses`);
 
-    // Fetch each other period
+    // Fetch each other period (re-GET the page each time to get fresh form fields)
     for (const period of periods) {
       if (period.value === selectedVal) continue;
       try {
-        const html = await fetchRCForPeriod(client, period.value, formFields);
-        periodGrades[period.label] = parseRCPage(html);
-        console.log(`Period ${period.label} grades:`, Object.keys(periodGrades[period.label]).length);
-        await new Promise(r => setTimeout(r, 400));
+        await new Promise(r => setTimeout(r, 500)); // be polite
+        const html = await fetchPeriod(client, period.value);
+        periodGrades[period.label] = parseRCGrades(html);
+        console.log(`Period ${period.label}: ${Object.keys(periodGrades[period.label]).length} courses`);
       } catch (e) {
-        console.error(`Period ${period.label} failed:`, e.message);
+        console.error(`Period ${period.label} error:`, e.message);
         periodGrades[period.label] = {};
       }
     }
 
-    // Live current grades
+    // Live current classes
     let liveGrades = {};
     try {
       const cwRes = await client.get(CW_URL);
       liveGrades = parseCurrentClasses(cwRes.data);
-      console.log('Live grades:', Object.keys(liveGrades).length);
-    } catch(e) { console.error('CW:', e.message); }
+      console.log(`Live classes: ${Object.keys(liveGrades).length}`);
+    } catch(e) { console.error('CW error:', e.message); }
 
     // Student info
     let student = { name: '', grade: '', campus: '' };
@@ -224,12 +261,12 @@ app.post('/api/grades', async (req, res) => {
     } catch(e) {}
 
     // Build merged course list
-    const allNames = new Set();
-    Object.values(periodGrades).forEach(pg => Object.keys(pg).forEach(n => allNames.add(n)));
-    Object.keys(liveGrades).forEach(n => allNames.add(n));
+    const allRawNames = new Set();
+    Object.values(periodGrades).forEach(pg => Object.keys(pg).forEach(n => allRawNames.add(n)));
+    Object.keys(liveGrades).forEach(n => allRawNames.add(n));
 
     const courses = [];
-    allNames.forEach(rawName => {
+    allRawNames.forEach(rawName => {
       const name = cleanName(rawName);
       if (!name || name.length < 3) return;
 
@@ -242,10 +279,10 @@ app.post('/api/grades', async (req, res) => {
               ?? null;
 
       if ([q1, q2, q3, q4].every(v => v === null)) return;
-      courses.push({ name, q1avg: q1, q2avg: q2, q3avg: q3, q4avg: q4, avg: q4 });
+      courses.push({ name, q1avg: q1, q2avg: q2, q3avg: q3, q4avg: q4, avg: q4 ?? q3 ?? q2 ?? q1 });
     });
 
-    // Last resort fallback
+    // Fallback to live only
     if (!courses.length && Object.keys(liveGrades).length > 0) {
       Object.entries(liveGrades).forEach(([rawName, avg]) => {
         courses.push({ name: cleanName(rawName), q1avg: null, q2avg: null, q3avg: null, q4avg: avg, avg });
@@ -260,7 +297,7 @@ app.post('/api/grades', async (req, res) => {
       _debug: {
         periods,
         periodCounts: Object.fromEntries(Object.entries(periodGrades).map(([k,v]) => [k, Object.keys(v).length])),
-        liveCount: Object.keys(liveGrades).length
+        liveCount: Object.keys(liveGrades).length,
       }
     });
 
@@ -269,21 +306,6 @@ app.post('/api/grades', async (req, res) => {
     const status = err.message?.includes('username or password') ? 401 : 500;
     res.status(status).json({ error: err.message || 'Unknown error.' });
   }
-});
-
-// Debug endpoint
-app.post('/api/debug', async (req, res) => {
-  const { username, password } = req.body || {};
-  if (!username || !password) return res.status(400).json({ error: 'creds required' });
-  const client = makeClient();
-  try {
-    await login(client, username, password);
-    const rcRes  = await client.get(RC_URL);
-    const $      = cheerio.load(rcRes.data);
-    const periods = getReportingPeriods($);
-    const grades  = parseRCPage(rcRes.data);
-    res.json({ periods, gradesFound: Object.keys(grades).length, grades, snippet: rcRes.data.slice(4000, 7000) });
-  } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
 app.get('/', (_, res) => res.sendFile(path.join(__dirname, 'index.html')));
