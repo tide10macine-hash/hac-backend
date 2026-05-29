@@ -21,25 +21,19 @@ const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,
 function makeClient() {
   const jar = new CookieJar();
   return wrapper(axios.create({
-    jar,
-    withCredentials: true,
-    maxRedirects: 10,
-    timeout: 30000,
+    jar, withCredentials: true, maxRedirects: 10, timeout: 30000,
     headers: { 'User-Agent': UA, 'Accept-Language': 'en-US,en;q=0.9' },
   }));
 }
 
 async function login(client, username, password) {
-  // Step 1: GET login page to grab the CSRF token
   const getRes = await client.get(LOGIN_URL, {
     headers: { 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8' }
   });
-
   const $get = cheerio.load(getRes.data);
   const token = $get('input[name="__RequestVerificationToken"]').val();
   if (!token) throw new Error('Could not load HAC — site may be down.');
 
-  // Step 2: POST credentials
   const body = new URLSearchParams({
     '__RequestVerificationToken': token,
     'SCKTY00328510CustomEnabled': 'False',
@@ -60,94 +54,96 @@ async function login(client, username, password) {
 
   const finalUrl = postRes.request?.res?.responseUrl || postRes.config?.url || '';
   const $post = cheerio.load(postRes.data);
-
-  // Check for explicit error messages on the page
   const errText = $post('.validation-summary-errors li, #ErrorMessage, .error').text().trim().toLowerCase();
   if (errText && (errText.includes('invalid') || errText.includes('incorrect') || errText.includes('failed'))) {
     throw new Error('Incorrect username or password.');
   }
-
-  // If we're still on the login page AND there's no welcome/student content → bad creds
   const onLoginPage = finalUrl.includes('LogOn') || finalUrl.includes('logon');
-  const hasStudentContent = $post('.sg-banner, .sg-header, #plnMain, nav.sg-banner').length > 0;
-  const hasLogout = $post('a[href*="LogOff"], a[href*="logoff"], a[href*="LogOut"]').length > 0;
-
-  if (onLoginPage && !hasStudentContent && !hasLogout) {
-    throw new Error('Incorrect username or password.');
-  }
-
-  // Success — session cookie is stored in jar automatically
-  return postRes;
+  const hasContent  = $post('.sg-banner, .sg-header, #plnMain').length > 0;
+  const hasLogout   = $post('a[href*="LogOff"], a[href*="logoff"]').length > 0;
+  if (onLoginPage && !hasContent && !hasLogout) throw new Error('Incorrect username or password.');
 }
 
-function parseReportCard(html) {
+function extractFormFields($) {
+  return {
+    __EVENTTARGET:        $('input[name="__EVENTTARGET"]').val() || '',
+    __EVENTARGUMENT:      $('input[name="__EVENTARGUMENT"]').val() || '',
+    __VIEWSTATE:          $('input[name="__VIEWSTATE"]').val() || '',
+    __VIEWSTATEGENERATOR: $('input[name="__VIEWSTATEGENERATOR"]').val() || '',
+    __EVENTVALIDATION:    $('input[name="__EVENTVALIDATION"]').val() || '',
+  };
+}
+
+function getReportingPeriods($) {
+  const periods = [];
+  $('#plnMain_ddlRCRuns option').each((_, el) => {
+    periods.push({ value: $(el).attr('value'), label: $(el).text().trim() });
+  });
+  return periods;
+}
+
+// Parse one report card page — returns { rawCourseName: avg }
+function parseRCPage(html) {
   const $ = cheerio.load(html);
-  const courses = [];
-  let headers = [];
+  const grades = {};
 
-  $('table tr').each((_, row) => {
-    const $row = $(row);
-    const cells = $row.find('th, td');
-    if (!cells.length) return;
+  $('table').each((_, tbl) => {
+    const rows = $(tbl).find('tr');
+    if (rows.length < 2) return;
 
-    const isHeader = $row.find('th').length > 0;
-    if (isHeader) {
-      headers = [];
-      cells.each((_, c) => headers.push($(c).text().trim().toLowerCase()));
-      return;
-    }
-    if (!headers.length) return;
+    const headerText = rows.first().text().toLowerCase();
+    if (!headerText.includes('course') && !headerText.includes('class') && !headerText.includes('avg') && !headerText.includes('average')) return;
 
-    const vals = [];
-    cells.each((_, c) => vals.push($(c).text().trim()));
-    if (!vals[0] || vals[0].length < 2) return;
+    rows.each((i, row) => {
+      if (i === 0) return;
+      const cells = $(row).find('td');
+      if (cells.length < 2) return;
+      const name = cells.first().text().trim();
+      if (!name || name.length < 3) return;
 
-    function col(...pats) {
-      for (const p of pats) {
-        const i = headers.findIndex(h => h.includes(p));
-        if (i >= 0) return i;
-      }
-      return -1;
-    }
+      let avg = null;
+      cells.each((j, td) => {
+        if (j === 0) return;
+        const txt = $(td).text().trim();
+        if (txt.match(/^\d{2,3}(\.\d+)?$/) && parseFloat(txt) <= 100) {
+          avg = parseFloat(txt);
+          return false;
+        }
+      });
 
-    function grade(v) {
-      if (!v) return null;
-      const s = String(v).trim();
-      if (!s || ['-', 'n/a', 'ng', ''].includes(s.toLowerCase())) return null;
-      const n = parseFloat(s);
-      return isNaN(n) ? null : n;
-    }
-
-    const iQ1 = col('1st', 'q1', 'first');
-    const iQ2 = col('2nd', 'q2', 'second');
-    const iQ3 = col('3rd', 'q3', 'third');
-    const iQ4 = col('4th', 'q4', 'fourth');
-
-    const entry = {
-      name:  vals[0],
-      q1avg: iQ1 >= 0 ? grade(vals[iQ1]) : null,
-      q2avg: iQ2 >= 0 ? grade(vals[iQ2]) : null,
-      q3avg: iQ3 >= 0 ? grade(vals[iQ3]) : null,
-      q4avg: iQ4 >= 0 ? grade(vals[iQ4]) : null,
-    };
-
-    if ([entry.q1avg, entry.q2avg, entry.q3avg, entry.q4avg].some(v => v !== null)) {
-      courses.push(entry);
-    }
+      if (avg !== null) grades[name] = avg;
+    });
   });
 
-  return courses;
+  return grades;
+}
+
+async function fetchRCForPeriod(client, periodValue, formFields) {
+  const body = new URLSearchParams({
+    ...formFields,
+    '__EVENTTARGET':   'ctl00$plnMain$ddlRCRuns',
+    '__EVENTARGUMENT': '',
+    'ctl00$plnMain$ddlRCRuns': periodValue,
+  });
+  const res = await client.post(RC_URL, body.toString(), {
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'Referer': RC_URL,
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+    },
+  });
+  return res.data;
 }
 
 function parseCurrentClasses(html) {
   const $ = cheerio.load(html);
-  const classes = [];
+  const classes = {};
   $('.AssignmentClass').each((_, el) => {
     const name = $(el).find('.sg-header-heading, a.sg-header-link').first().text().trim();
     const sub  = $(el).find('.sg-header-subheading').first().text().trim();
     const m    = sub.match(/([\d.]+)/);
     const avg  = m ? parseFloat(m[1]) : null;
-    if (name) classes.push({ name, avg });
+    if (name && avg !== null) classes[name] = avg;
   });
   return classes;
 }
@@ -166,6 +162,10 @@ function cleanName(raw) {
   return m ? m[1].trim() : raw.trim();
 }
 
+function normKey(s) {
+  return cleanName(s).toLowerCase().replace(/\s+/g, ' ').trim();
+}
+
 app.post('/api/grades', async (req, res) => {
   const { username, password } = req.body || {};
   if (!username || !password) return res.status(400).json({ error: 'Username and password required.' });
@@ -175,50 +175,94 @@ app.post('/api/grades', async (req, res) => {
   try {
     await login(client, username, password);
 
-    const [rcRes, cwRes, infoRes] = await Promise.allSettled([
-      client.get(RC_URL),
-      client.get(CW_URL),
-      client.get(INFO_URL),
-    ]);
+    // Get initial report card page
+    const rcInitRes = await client.get(RC_URL, {
+      headers: { 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8' }
+    });
+    const rcInitHtml  = rcInitRes.data;
+    const $rcInit     = cheerio.load(rcInitHtml);
+    const periods     = getReportingPeriods($rcInit);
+    const formFields  = extractFormFields($rcInit);
 
-    let rcCourses = [];
-    if (rcRes.status === 'fulfilled') {
-      try { rcCourses = parseReportCard(rcRes.value.data); } catch(e) { console.error('RC:', e.message); }
+    console.log('Periods found:', periods.map(p => p.label));
+
+    // Figure out which period is currently shown
+    const selectedVal   = $rcInit('#plnMain_ddlRCRuns option[selected]').attr('value') || periods[periods.length - 1]?.value;
+    const selectedLabel = periods.find(p => p.value === selectedVal)?.label || String(periods.length);
+
+    const periodGrades = {};
+    periodGrades[selectedLabel] = parseRCPage(rcInitHtml);
+    console.log(`Period ${selectedLabel} grades:`, Object.keys(periodGrades[selectedLabel]).length);
+
+    // Fetch each other period
+    for (const period of periods) {
+      if (period.value === selectedVal) continue;
+      try {
+        const html = await fetchRCForPeriod(client, period.value, formFields);
+        periodGrades[period.label] = parseRCPage(html);
+        console.log(`Period ${period.label} grades:`, Object.keys(periodGrades[period.label]).length);
+        await new Promise(r => setTimeout(r, 400));
+      } catch (e) {
+        console.error(`Period ${period.label} failed:`, e.message);
+        periodGrades[period.label] = {};
+      }
     }
 
-    let currClasses = [];
-    if (cwRes.status === 'fulfilled') {
-      try { currClasses = parseCurrentClasses(cwRes.value.data); } catch(e) { console.error('CW:', e.message); }
-    }
+    // Live current grades
+    let liveGrades = {};
+    try {
+      const cwRes = await client.get(CW_URL);
+      liveGrades = parseCurrentClasses(cwRes.data);
+      console.log('Live grades:', Object.keys(liveGrades).length);
+    } catch(e) { console.error('CW:', e.message); }
 
+    // Student info
     let student = { name: '', grade: '', campus: '' };
-    if (infoRes.status === 'fulfilled') {
-      try { student = parseStudentInfo(infoRes.value.data); } catch(e) {}
-    }
+    try {
+      const infoRes = await client.get(INFO_URL);
+      student = parseStudentInfo(infoRes.data);
+    } catch(e) {}
 
-    const liveMap = {};
-    currClasses.forEach(c => { liveMap[cleanName(c.name).toLowerCase()] = c.avg; });
+    // Build merged course list
+    const allNames = new Set();
+    Object.values(periodGrades).forEach(pg => Object.keys(pg).forEach(n => allNames.add(n)));
+    Object.keys(liveGrades).forEach(n => allNames.add(n));
 
-    let courses = [];
+    const courses = [];
+    allNames.forEach(rawName => {
+      const name = cleanName(rawName);
+      if (!name || name.length < 3) return;
 
-    if (rcCourses.length > 0) {
-      courses = rcCourses.map(c => {
-        const name = cleanName(c.name);
-        const live = liveMap[name.toLowerCase()] ?? null;
-        const q4   = c.q4avg ?? live;
-        return { name, q1avg: c.q1avg, q2avg: c.q2avg, q3avg: c.q3avg, q4avg: q4, avg: q4 };
-      }).filter(c => c.name && [c.q1avg, c.q2avg, c.q3avg, c.q4avg].some(v => v !== null));
-    }
+      const q1 = periodGrades['1']?.[rawName] ?? null;
+      const q2 = periodGrades['2']?.[rawName] ?? null;
+      const q3 = periodGrades['3']?.[rawName] ?? null;
+      const q4 = periodGrades['4']?.[rawName]
+              ?? liveGrades[rawName]
+              ?? liveGrades[Object.keys(liveGrades).find(k => normKey(k) === normKey(rawName)) || '']
+              ?? null;
 
-    if (!courses.length && currClasses.length > 0) {
-      courses = currClasses.map(c => ({
-        name: cleanName(c.name), q1avg: null, q2avg: null, q3avg: null, q4avg: c.avg, avg: c.avg,
-      })).filter(c => c.name && c.avg !== null);
+      if ([q1, q2, q3, q4].every(v => v === null)) return;
+      courses.push({ name, q1avg: q1, q2avg: q2, q3avg: q3, q4avg: q4, avg: q4 });
+    });
+
+    // Last resort fallback
+    if (!courses.length && Object.keys(liveGrades).length > 0) {
+      Object.entries(liveGrades).forEach(([rawName, avg]) => {
+        courses.push({ name: cleanName(rawName), q1avg: null, q2avg: null, q3avg: null, q4avg: avg, avg });
+      });
     }
 
     if (!courses.length) return res.status(404).json({ error: 'No grade data found.' });
 
-    res.json({ student, courses, _debug: { rcFound: rcCourses.length, cwFound: currClasses.length } });
+    res.json({
+      student,
+      courses,
+      _debug: {
+        periods,
+        periodCounts: Object.fromEntries(Object.entries(periodGrades).map(([k,v]) => [k, Object.keys(v).length])),
+        liveCount: Object.keys(liveGrades).length
+      }
+    });
 
   } catch (err) {
     console.error('Error:', err.message);
@@ -227,48 +271,23 @@ app.post('/api/grades', async (req, res) => {
   }
 });
 
+// Debug endpoint
+app.post('/api/debug', async (req, res) => {
+  const { username, password } = req.body || {};
+  if (!username || !password) return res.status(400).json({ error: 'creds required' });
+  const client = makeClient();
+  try {
+    await login(client, username, password);
+    const rcRes  = await client.get(RC_URL);
+    const $      = cheerio.load(rcRes.data);
+    const periods = getReportingPeriods($);
+    const grades  = parseRCPage(rcRes.data);
+    res.json({ periods, gradesFound: Object.keys(grades).length, grades, snippet: rcRes.data.slice(4000, 7000) });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 app.get('/', (_, res) => res.sendFile(path.join(__dirname, 'index.html')));
 app.get('/api/health', (_, res) => res.json({ ok: true }));
 
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => console.log(`Running on http://localhost:${PORT}`));
-
-
-// ── TEMP DEBUG: returns raw HTML snippets so we can see what HAC sends back ──
-app.post('/api/debug', async (req, res) => {
-  const { username, password } = req.body || {};
-  if (!username || !password) return res.status(400).json({ error: 'creds required' });
-
-  const client = makeClient();
-  try {
-    await login(client, username, password);
-
-    const [rcRes, cwRes] = await Promise.allSettled([
-      client.get(RC_URL),
-      client.get(CW_URL),
-    ]);
-
-    const rcHtml = rcRes.status === 'fulfilled' ? rcRes.value.data : 'FAILED: ' + rcRes.reason?.message;
-    const cwHtml = cwRes.status === 'fulfilled' ? cwRes.value.data : 'FAILED: ' + cwRes.reason?.message;
-
-    // Send back first 8000 chars of each page so we can see the structure
-    res.json({
-      reportCard: {
-        first8000: rcHtml.slice(0, 8000),
-        tableCount: (rcHtml.match(/<table/gi) || []).length,
-        hasAssignmentClass: rcHtml.includes('AssignmentClass'),
-        hasSgHeader: rcHtml.includes('sg-header'),
-        length: rcHtml.length,
-      },
-      classwork: {
-        first8000: cwHtml.slice(0, 8000),
-        tableCount: (cwHtml.match(/<table/gi) || []).length,
-        hasAssignmentClass: cwHtml.includes('AssignmentClass'),
-        hasSgHeader: cwHtml.includes('sg-header'),
-        length: cwHtml.length,
-      }
-    });
-  } catch(err) {
-    res.status(500).json({ error: err.message });
-  }
-});
