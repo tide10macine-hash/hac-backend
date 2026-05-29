@@ -1,10 +1,10 @@
 const express = require('express');
-const axios = require('axios');
-const { wrapper } = require('axios-cookiejar-support');
+const axios   = require('axios');
+const { wrapper }   = require('axios-cookiejar-support');
 const { CookieJar } = require('tough-cookie');
 const cheerio = require('cheerio');
-const cors = require('cors');
-const path = require('path');
+const cors    = require('cors');
+const path    = require('path');
 
 const app = express();
 app.use(cors());
@@ -16,8 +16,10 @@ const RC_URL    = `${HAC_BASE}/HomeAccess/Content/Student/ReportCards.aspx`;
 const CW_URL    = `${HAC_BASE}/HomeAccess/Content/Student/Assignments.aspx`;
 const INFO_URL  = `${HAC_BASE}/HomeAccess/Content/Student/Registration.aspx`;
 
-const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
+const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
+           '(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
 
+// ── HTTP client with cookie jar ──────────────────────────────────────────────
 function makeClient() {
   const jar = new CookieJar();
   return wrapper(axios.create({
@@ -26,293 +28,377 @@ function makeClient() {
   }));
 }
 
+// ── Login ────────────────────────────────────────────────────────────────────
 async function login(client, username, password) {
   const getRes = await client.get(LOGIN_URL, {
-    headers: { 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8' }
+    headers: { Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8' },
   });
-  const $get = cheerio.load(getRes.data);
-  const token = $get('input[name="__RequestVerificationToken"]').val();
-  if (!token) throw new Error('Could not load HAC — site may be down.');
+  const $   = cheerio.load(getRes.data);
+  const tok = $('input[name="__RequestVerificationToken"]').val();
+  if (!tok) throw new Error('Could not load HAC login page — site may be down.');
 
   const body = new URLSearchParams({
-    '__RequestVerificationToken': token,
-    'SCKTY00328510CustomEnabled': 'False',
-    'SCKTY00436568CustomEnabled': 'False',
-    'Database': '10',
-    'VerificationOption': 'UsernamePassword',
-    'LogOnDetails.UserName': username,
-    'LogOnDetails.Password': password,
+    '__RequestVerificationToken':  tok,
+    'SCKTY00328510CustomEnabled':  'False',
+    'SCKTY00436568CustomEnabled':  'False',
+    'Database':                    '10',
+    'VerificationOption':          'UsernamePassword',
+    'LogOnDetails.UserName':       username,
+    'LogOnDetails.Password':       password,
   });
 
   const postRes = await client.post(LOGIN_URL, body.toString(), {
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded',
-      'Referer': LOGIN_URL,
-      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+      'Referer':      LOGIN_URL,
+      'Accept':       'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
     },
   });
 
-  const finalUrl = postRes.request?.res?.responseUrl || postRes.config?.url || '';
-  const $post = cheerio.load(postRes.data);
-  const errText = $post('.validation-summary-errors li, #ErrorMessage').text().trim().toLowerCase();
-  if (errText && (errText.includes('invalid') || errText.includes('incorrect'))) {
+  const $p      = cheerio.load(postRes.data);
+  const errText = $p('.validation-summary-errors li, #ErrorMessage').text().trim().toLowerCase();
+  if (errText && (errText.includes('invalid') || errText.includes('incorrect')))
     throw new Error('Incorrect username or password.');
-  }
-  const onLoginPage = finalUrl.includes('LogOn') || finalUrl.includes('logon');
-  const hasContent  = $post('.sg-banner, .sg-header, #plnMain').length > 0;
-  const hasLogout   = $post('a[href*="LogOff"], a[href*="logoff"]').length > 0;
-  if (onLoginPage && !hasContent && !hasLogout) throw new Error('Incorrect username or password.');
+
+  const finalUrl  = postRes.request?.res?.responseUrl || '';
+  const onLogin   = finalUrl.toLowerCase().includes('logon');
+  const hasLogout = $p('a[href*="LogOff"], a[href*="logoff"]').length > 0;
+  const hasMain   = $p('#plnMain, .sg-banner, .sg-header').length > 0;
+  if (onLogin && !hasLogout && !hasMain)
+    throw new Error('Incorrect username or password.');
 }
 
-// Extract ASP.NET hidden form fields from a loaded cheerio page
+// ── ASP.NET form fields ──────────────────────────────────────────────────────
 function extractFormFields($) {
   return {
-    __EVENTTARGET:        $('input[name="__EVENTTARGET"]').val() || '',
-    __EVENTARGUMENT:      $('input[name="__EVENTARGUMENT"]').val() || '',
-    __VIEWSTATE:          $('input[name="__VIEWSTATE"]').val() || '',
+    __EVENTTARGET:        $('input[name="__EVENTTARGET"]').val()        || '',
+    __EVENTARGUMENT:      $('input[name="__EVENTARGUMENT"]').val()      || '',
+    __VIEWSTATE:          $('input[name="__VIEWSTATE"]').val()          || '',
     __VIEWSTATEGENERATOR: $('input[name="__VIEWSTATEGENERATOR"]').val() || '',
-    __EVENTVALIDATION:    $('input[name="__EVENTVALIDATION"]').val() || '',
+    __EVENTVALIDATION:    $('input[name="__EVENTVALIDATION"]').val()    || '',
   };
 }
 
-// Get all dropdown options for reporting periods
-function getReportingPeriods($) {
-  const periods = [];
-  $('#plnMain_ddlRCRuns option').each((_, el) => {
-    const value = $(el).attr('value');
-    const label = $(el).text().trim();
-    if (value && label) periods.push({ value, label });
-  });
-  return periods;
+// ── Strip course-code prefix ─────────────────────────────────────────────────
+// "ELA12200B - 2    English 2 Adv S2"  →  "English 2 Adv S2"
+// "MTH45300A - 3    AP Calculus AB S1" →  "AP Calculus AB S1"
+function cleanName(raw) {
+  if (!raw) return '';
+  const m = raw.match(/^[A-Z0-9]+-\s*\d+\s{2,}(.+)$/) ||  // two or more spaces after period#
+            raw.match(/^[A-Z0-9]+\s+-\s+\d+\s+(.+)$/);     // spaces around dash
+  return m ? m[1].trim() : raw.trim();
 }
 
-// Parse grades from ONE report card page
-// Returns { rawCourseName: gradeNumber }
-function parseRCGrades(html) {
+// ── Student info ─────────────────────────────────────────────────────────────
+function parseStudentInfo(html) {
   const $ = cheerio.load(html);
-  const grades = {};
 
-  // HAC report card rows: each row has a course code cell then grade cells
-  // We accept any row where first cell looks like a course code (letters+digits)
-  // or contains a " - " separator (e.g. "ELA12200B - 2  English 1 Adv")
+  // HAC Registration page uses ids like "plnMain_lblRegStudentName" etc.
+  // Try several known patterns
+  const nameEl =
+    $('[id$="StudentName"], [id$="lblName"], [id*="RegStudent"]').first().text().trim() ||
+    $('span:contains("Name")').closest('tr').find('td').last().text().trim() ||
+    '';
 
-  $('table tr').each((_, row) => {
+  const gradeEl =
+    $('[id$="GradeLevel"], [id$="lblGrade"], [id*="Grade"]').first().text().trim() || '';
+
+  const campusEl =
+    $('[id$="BuildingName"], [id$="lblCampus"], [id$="lblSchool"], [id*="Campus"], [id*="School"]')
+      .first().text().trim() || '';
+
+  return { name: nameEl, grade: gradeEl, campus: campusEl };
+}
+
+// ── Parse ONE report card page ───────────────────────────────────────────────
+//
+// HAC's report card table looks like:
+//
+//  | Course Description         | MP1 | MP2 | MP3 | MP4 | Exam | Sem | Exam | Sem | Cit | Cit | Cit | Cit |
+//  | ELA12200B - 2  English ... | 99  |     |     |     |      |     |      |     |     |     |     |     |
+//
+// When a specific period is selected via the dropdown, ONLY that period's column
+// has a grade; all others are blank.  So we just find the FIRST non-empty numeric
+// cell after the course-name cell — that is the grade for the selected period.
+//
+// Returns Map<rawCourseName, grade>
+function parseRCGrades(html) {
+  const $      = cheerio.load(html);
+  const grades = new Map();
+
+  // The report card table is inside #plnMain or has class sg-asp-table
+  const table = $('#plnMain table, table.sg-asp-table').first();
+  const rows  = table.length ? table.find('tr') : $('table tr');
+
+  rows.each((_, row) => {
     const $row = $(row);
-    if ($row.find('th').length > 0) return; // skip header rows
+    if ($row.find('th').length) return; // header row
 
     const cells = $row.find('td');
     if (cells.length < 2) return;
 
-    const courseName = $(cells[0]).text().trim();
-    if (!courseName || courseName.length < 4) return;
+    // First cell = course code + name
+    const rawName = $(cells[0]).text().trim();
+    if (!rawName || rawName.length < 6) return;
 
-    // Accept rows that look like course entries
-    const looksLikeCourse =
-      /^[A-Z]{2,4}\d/.test(courseName) ||          // starts with dept code + digit
-      / - \d/.test(courseName) ||                    // has " - N" (period number)
-      /[A-Z]{2,}\d{4,}/.test(courseName);           // embedded long course code
+    // Must contain a course-code pattern like "ELA12200B" or "MTH453"
+    if (!/[A-Z]{2,4}\d{4,}/.test(rawName) && !/ - \d/.test(rawName)) return;
 
-    if (!looksLikeCourse) return;
-
-    // Find the grade: prefer a cell whose text is purely numeric (grade value)
-    // Walk cells right-to-left so we get the most recent / relevant grade first
-    let avg = null;
-    const cellArr = cells.toArray();
-    for (let i = cellArr.length - 1; i >= 1; i--) {
-      const txt = $(cellArr[i]).text().trim();
+    // Find the first non-empty cell after col 0 that holds a grade (40-100)
+    let grade = null;
+    for (let i = 1; i < cells.length; i++) {
+      const txt = $(cells[i]).text().trim();
       if (/^\d{2,3}(\.\d+)?$/.test(txt)) {
         const n = parseFloat(txt);
-        if (n >= 40 && n <= 100) { avg = n; break; }
+        if (n >= 40 && n <= 100) { grade = n; break; }
       }
     }
 
-    // Also check for cells with grade-related class names
-    if (avg === null) {
-      $row.find('[class*="avg"],[class*="Avg"],[class*="grade"],[class*="Grade"]').each((_, td) => {
-        const txt = $(td).text().trim();
-        const n = parseFloat(txt);
-        if (!isNaN(n) && n >= 40 && n <= 100) { avg = n; return false; }
-      });
-    }
-
-    if (avg !== null) {
-      grades[courseName] = avg;
+    if (grade !== null) {
+      grades.set(rawName, grade);
     }
   });
 
   return grades;
 }
 
-// Fetch report card page for a specific period by posting the dropdown change
-// IMPORTANT: each postback returns a NEW page with NEW form fields — we re-parse them each time
+// ── Fetch a specific reporting period ────────────────────────────────────────
+// Each postback must re-GET the page first to get fresh ASP.NET form tokens,
+// then POST the dropdown change.
 async function fetchPeriod(client, periodValue) {
-  // First GET the page fresh to get current form state
   const getRes = await client.get(RC_URL, {
-    headers: { 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8', 'Referer': RC_URL }
+    headers: {
+      Accept:  'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+      Referer: RC_URL,
+    },
   });
-  const $ = cheerio.load(getRes.data);
+  const $      = cheerio.load(getRes.data);
   const fields = extractFormFields($);
 
-  // Now POST the dropdown change
   const body = new URLSearchParams({
     ...fields,
-    '__EVENTTARGET':   'ctl00$plnMain$ddlRCRuns',
-    '__EVENTARGUMENT': '',
-    'ctl00$plnMain$ddlRCRuns': periodValue,
+    '__EVENTTARGET':             'ctl00$plnMain$ddlRCRuns',
+    '__EVENTARGUMENT':           '',
+    'ctl00$plnMain$ddlRCRuns':   periodValue,
   });
 
   const postRes = await client.post(RC_URL, body.toString(), {
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded',
-      'Referer': RC_URL,
-      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+      Referer:        RC_URL,
+      Accept:         'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
     },
   });
 
   return postRes.data;
 }
 
-// Parse classwork page for live averages
+// ── Parse live classwork averages ─────────────────────────────────────────────
 function parseCurrentClasses(html) {
-  const $ = cheerio.load(html);
-  const classes = {};
+  const $       = cheerio.load(html);
+  const classes = new Map();
+
   $('.AssignmentClass').each((_, el) => {
     const name = $(el).find('.sg-header-heading, a.sg-header-link').first().text().trim();
     const sub  = $(el).find('.sg-header-subheading').first().text().trim();
     const m    = sub.match(/([\d.]+)/);
     const avg  = m ? parseFloat(m[1]) : null;
-    if (name && avg !== null) classes[name] = avg;
+    if (name && avg !== null) classes.set(name, avg);
   });
+
   return classes;
 }
 
-function parseStudentInfo(html) {
-  const $ = cheerio.load(html);
-  const name   = $('[id*="StudentName"],[id*="lblName"]').first().text().trim();
-  const grade  = $('[id*="GradeLevel"],[id*="lblGrade"]').first().text().trim();
-  const campus = $('[id*="BuildingName"],[id*="lblCampus"],[id*="lblSchool"]').first().text().trim();
-  return { name, grade, campus };
-}
-
-// Strip course code prefix: "MTH45300A - 3    AP Calculus AB S1" → "AP Calculus AB S1"
-function cleanName(raw) {
-  if (!raw) return '';
-  // Pattern: CODE - PERIOD    NAME
-  const m = raw.match(/^[A-Z0-9]+\s*-\s*\d+\s{2,}(.+)$/) ||
-            raw.match(/^[A-Z0-9]+\s*-\s*\d+\s+(.+)$/);
-  return m ? m[1].trim() : raw.trim();
-}
-
+// ── Normalise a cleaned name for fuzzy matching ───────────────────────────────
 function normKey(s) {
-  return cleanName(s).toLowerCase().replace(/\s+/g, ' ').trim();
+  return s.toLowerCase()
+          .replace(/\s+s[12]\s*$/i, '')  // strip trailing S1 / S2
+          .replace(/\s+/g, ' ')
+          .trim();
 }
 
+// ── Main API route ────────────────────────────────────────────────────────────
 app.post('/api/grades', async (req, res) => {
   const { username, password } = req.body || {};
-  if (!username || !password) return res.status(400).json({ error: 'Username and password required.' });
+  if (!username || !password)
+    return res.status(400).json({ error: 'Username and password required.' });
 
   const client = makeClient();
 
   try {
     await login(client, username, password);
 
-    // Get initial report card page to find available periods
+    // ── 1. Get report card page and discover all periods ──────────────────
     const rcInitRes = await client.get(RC_URL, {
-      headers: { 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8' }
+      headers: { Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8' },
     });
-    const $rcInit  = cheerio.load(rcInitRes.data);
-    const periods  = getReportingPeriods($rcInit);
+    const $rcInit = cheerio.load(rcInitRes.data);
 
-    console.log('Periods:', periods.map(p => `${p.label}=${p.value}`).join(', '));
+    // Collect dropdown options: [{value, label}, ...]
+    const allPeriods = [];
+    $rcInit('#plnMain_ddlRCRuns option').each((_, el) => {
+      const value = $rcInit(el).attr('value');
+      const label = $rcInit(el).text().trim();
+      if (value && label) allPeriods.push({ value, label });
+    });
 
-    // Which period is currently selected?
-    const selectedVal   = $rcInit('#plnMain_ddlRCRuns option[selected]').attr('value') || periods[periods.length-1]?.value;
-    const selectedLabel = periods.find(p => p.value === selectedVal)?.label || String(periods.length);
+    console.log('All periods found:', allPeriods.map(p => `"${p.label}"=${p.value}`).join(', '));
 
-    // Parse initial page (currently selected period)
-    const periodGrades = {};
-    periodGrades[selectedLabel] = parseRCGrades(rcInitRes.data);
-    console.log(`Period ${selectedLabel}: ${Object.keys(periodGrades[selectedLabel]).length} courses`);
+    // ── 2. Map periods to Q1/Q2/Q3/Q4 by position ─────────────────────────
+    // HAC always lists periods chronologically: period 1 = Q1, 2 = Q2, etc.
+    // We take the first 4 (there may be more for semester exams etc.)
+    // Label matching: if label contains "1"→Q1, "2"→Q2 etc.; fallback to index.
+    const quarterMap = {};  // quarterMap['q1'] = { value, label }
 
-    // Fetch each other period (re-GET the page each time to get fresh form fields)
-    for (const period of periods) {
-      if (period.value === selectedVal) continue;
+    if (allPeriods.length >= 4) {
+      // Try to identify which label corresponds to which quarter
+      // by looking for "1", "2", "3", "4" inside the label text.
+      const matched = [false, false, false, false];
+      ['q1','q2','q3','q4'].forEach((q, qi) => {
+        const target = String(qi + 1);
+        const found  = allPeriods.find((p, pi) =>
+          !matched[pi] &&
+          (p.label === target ||
+           p.label.toLowerCase().includes(`quarter ${target}`) ||
+           p.label.toLowerCase().includes(`mp${target}`) ||
+           p.label.toLowerCase().includes(`mp ${target}`) ||
+           p.label.endsWith(target))
+        );
+        if (found) {
+          quarterMap[q] = found;
+          matched[allPeriods.indexOf(found)] = true;
+        }
+      });
+
+      // Fallback: if matching failed, just use positional order (1st=Q1, 2nd=Q2 …)
+      if (!quarterMap['q1'] && allPeriods.length >= 1) quarterMap['q1'] = allPeriods[0];
+      if (!quarterMap['q2'] && allPeriods.length >= 2) quarterMap['q2'] = allPeriods[1];
+      if (!quarterMap['q3'] && allPeriods.length >= 3) quarterMap['q3'] = allPeriods[2];
+      if (!quarterMap['q4'] && allPeriods.length >= 4) quarterMap['q4'] = allPeriods[3];
+    } else {
+      // Fewer than 4 periods — map what we have
+      allPeriods.slice(0, 4).forEach((p, i) => {
+        quarterMap[`q${i+1}`] = p;
+      });
+    }
+
+    console.log('Quarter mapping:',
+      Object.entries(quarterMap).map(([q,p]) => `${q}→"${p.label}"(${p.value})`).join(', '));
+
+    // ── 3. Determine which period is currently shown ───────────────────────
+    const selectedVal = $rcInit('#plnMain_ddlRCRuns option[selected]').attr('value')
+                     || allPeriods[allPeriods.length - 1]?.value;
+
+    // ── 4. Fetch each quarter's page ──────────────────────────────────────
+    const quarterGrades = {};  // quarterGrades['q1'] = Map<rawName, grade>
+
+    for (const [q, period] of Object.entries(quarterMap)) {
       try {
-        await new Promise(r => setTimeout(r, 500)); // be polite
-        const html = await fetchPeriod(client, period.value);
-        periodGrades[period.label] = parseRCGrades(html);
-        console.log(`Period ${period.label}: ${Object.keys(periodGrades[period.label]).length} courses`);
+        let html;
+        if (period.value === selectedVal) {
+          // Already have this page
+          html = rcInitRes.data;
+        } else {
+          await new Promise(r => setTimeout(r, 600)); // polite delay
+          html = await fetchPeriod(client, period.value);
+        }
+        quarterGrades[q] = parseRCGrades(html);
+        console.log(`${q} ("${period.label}"): ${quarterGrades[q].size} courses`);
       } catch (e) {
-        console.error(`Period ${period.label} error:`, e.message);
-        periodGrades[period.label] = {};
+        console.error(`${q} fetch error:`, e.message);
+        quarterGrades[q] = new Map();
       }
     }
 
-    // Live current classes
-    let liveGrades = {};
+    // ── 5. Live classwork (current Q4 live grade, supplements report card) ──
+    let liveGrades = new Map();
     try {
       const cwRes = await client.get(CW_URL);
-      liveGrades = parseCurrentClasses(cwRes.data);
-      console.log(`Live classes: ${Object.keys(liveGrades).length}`);
-    } catch(e) { console.error('CW error:', e.message); }
+      liveGrades  = parseCurrentClasses(cwRes.data);
+      console.log(`Live classes: ${liveGrades.size}`);
+    } catch (e) { console.error('Classwork error:', e.message); }
 
-    // Student info
+    // ── 6. Student info ───────────────────────────────────────────────────
     let student = { name: '', grade: '', campus: '' };
     try {
       const infoRes = await client.get(INFO_URL);
       student = parseStudentInfo(infoRes.data);
-    } catch(e) {}
+    } catch (e) { console.error('Info error:', e.message); }
 
-    // Build merged course list
-    const allRawNames = new Set();
-    Object.values(periodGrades).forEach(pg => Object.keys(pg).forEach(n => allRawNames.add(n)));
-    Object.keys(liveGrades).forEach(n => allRawNames.add(n));
+    // ── 7. Build merged course list ───────────────────────────────────────
+    // Collect all raw course names from every quarter + live
+    const allRaw = new Set();
+    Object.values(quarterGrades).forEach(m => m.forEach((_, k) => allRaw.add(k)));
+    liveGrades.forEach((_, k) => allRaw.add(k));
+
+    // Helper: look up grade across all sources for a raw course name
+    function findGrade(map, rawName) {
+      if (map.has(rawName)) return map.get(rawName);
+      // Fuzzy: match by normalised clean name
+      const nk = normKey(cleanName(rawName));
+      for (const [k, v] of map) {
+        if (normKey(cleanName(k)) === nk) return v;
+      }
+      return null;
+    }
 
     const courses = [];
-    allRawNames.forEach(rawName => {
+    allRaw.forEach(rawName => {
       const name = cleanName(rawName);
       if (!name || name.length < 3) return;
 
-      const q1 = periodGrades['1']?.[rawName] ?? null;
-      const q2 = periodGrades['2']?.[rawName] ?? null;
-      const q3 = periodGrades['3']?.[rawName] ?? null;
-      const q4 = periodGrades['4']?.[rawName]
-              ?? liveGrades[rawName]
-              ?? liveGrades[Object.keys(liveGrades).find(k => normKey(k) === normKey(rawName)) || '']
-              ?? null;
+      const q1 = findGrade(quarterGrades['q1'] || new Map(), rawName);
+      const q2 = findGrade(quarterGrades['q2'] || new Map(), rawName);
+      const q3 = findGrade(quarterGrades['q3'] || new Map(), rawName);
+      // Q4: prefer report card; fall back to live classwork
+      const q4 = findGrade(quarterGrades['q4'] || new Map(), rawName)
+              ?? findGrade(liveGrades, rawName);
 
       if ([q1, q2, q3, q4].every(v => v === null)) return;
-      courses.push({ name, q1avg: q1, q2avg: q2, q3avg: q3, q4avg: q4, avg: q4 ?? q3 ?? q2 ?? q1 });
+
+      courses.push({
+        name,
+        q1avg: q1,
+        q2avg: q2,
+        q3avg: q3,
+        q4avg: q4,
+        avg:   q4 ?? q3 ?? q2 ?? q1,
+      });
     });
 
-    // Fallback to live only
-    if (!courses.length && Object.keys(liveGrades).length > 0) {
-      Object.entries(liveGrades).forEach(([rawName, avg]) => {
-        courses.push({ name: cleanName(rawName), q1avg: null, q2avg: null, q3avg: null, q4avg: avg, avg });
+    // Fallback: if report card scraped nothing, use live classes only
+    if (!courses.length && liveGrades.size > 0) {
+      liveGrades.forEach((avg, rawName) => {
+        const name = cleanName(rawName);
+        if (name) courses.push({ name, q1avg: null, q2avg: null, q3avg: null, q4avg: avg, avg });
       });
     }
 
-    if (!courses.length) return res.status(404).json({ error: 'No grade data found.' });
+    if (!courses.length)
+      return res.status(404).json({ error: 'No grade data found. Check your credentials.' });
 
     res.json({
       student,
       courses,
       _debug: {
-        periods,
-        periodCounts: Object.fromEntries(Object.entries(periodGrades).map(([k,v]) => [k, Object.keys(v).length])),
-        liveCount: Object.keys(liveGrades).length,
-      }
+        allPeriods,
+        quarterMap: Object.fromEntries(Object.entries(quarterMap).map(([q,p]) => [q, p.label])),
+        quarterCounts: Object.fromEntries(
+          Object.entries(quarterGrades).map(([q, m]) => [q, m.size])
+        ),
+        liveCount: liveGrades.size,
+      },
     });
 
   } catch (err) {
-    console.error('Error:', err.message);
+    console.error('Fatal error:', err.message);
     const status = err.message?.includes('username or password') ? 401 : 500;
     res.status(status).json({ error: err.message || 'Unknown error.' });
   }
 });
 
-app.get('/', (_, res) => res.sendFile(path.join(__dirname, 'index.html')));
+app.get('/',           (_, res) => res.sendFile(path.join(__dirname, 'index.html')));
 app.get('/api/health', (_, res) => res.json({ ok: true }));
 
 const PORT = process.env.PORT || 3001;
-app.listen(PORT, () => console.log(`Running on http://localhost:${PORT}`));
+app.listen(PORT, () => console.log(`Server running on http://localhost:${PORT}`));
