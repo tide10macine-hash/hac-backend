@@ -232,3 +232,43 @@ app.get('/api/health', (_, res) => res.json({ ok: true }));
 
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => console.log(`Running on http://localhost:${PORT}`));
+
+
+// ── TEMP DEBUG: returns raw HTML snippets so we can see what HAC sends back ──
+app.post('/api/debug', async (req, res) => {
+  const { username, password } = req.body || {};
+  if (!username || !password) return res.status(400).json({ error: 'creds required' });
+
+  const client = makeClient();
+  try {
+    await login(client, username, password);
+
+    const [rcRes, cwRes] = await Promise.allSettled([
+      client.get(RC_URL),
+      client.get(CW_URL),
+    ]);
+
+    const rcHtml = rcRes.status === 'fulfilled' ? rcRes.value.data : 'FAILED: ' + rcRes.reason?.message;
+    const cwHtml = cwRes.status === 'fulfilled' ? cwRes.value.data : 'FAILED: ' + cwRes.reason?.message;
+
+    // Send back first 8000 chars of each page so we can see the structure
+    res.json({
+      reportCard: {
+        first8000: rcHtml.slice(0, 8000),
+        tableCount: (rcHtml.match(/<table/gi) || []).length,
+        hasAssignmentClass: rcHtml.includes('AssignmentClass'),
+        hasSgHeader: rcHtml.includes('sg-header'),
+        length: rcHtml.length,
+      },
+      classwork: {
+        first8000: cwHtml.slice(0, 8000),
+        tableCount: (cwHtml.match(/<table/gi) || []).length,
+        hasAssignmentClass: cwHtml.includes('AssignmentClass'),
+        hasSgHeader: cwHtml.includes('sg-header'),
+        length: cwHtml.length,
+      }
+    });
+  } catch(err) {
+    res.status(500).json({ error: err.message });
+  }
+});
