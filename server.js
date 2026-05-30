@@ -69,29 +69,47 @@ async function login(client, username, password) {
 // ─────────────────────────────────────────────────────────────────────────────
 // COURSE NAME CLEANING
 //
-// Input examples:
+// HAC raw course name formats seen in Frisco ISD:
 //   "ELA12200B - 2    English 2 Adv S2"
 //   "MTH4SB301A - 1  AP Calculus AB S1"
-//   "CSC21100A - 3  AP Computer Science A S1"
-//   "PE  Athletics"
+//   "CSC21100A - 3   AP Computer Science A S1"
+//   "SST85300A - 2   AP World History S1"
+//   "SCI34500B - 4   Chemistry Adv S2"
+//   "PE  Athletics"     (no code, already clean)
+//
+// Strategy: AGGRESSIVELY strip any leading course-code block, defined as
+// one or more "tokens" that look like codes (all-caps+digits, or pure digits)
+// followed by optional " - DIGIT(s)" section number, then whitespace.
+// Everything after that whitespace is the human name.
 // ─────────────────────────────────────────────────────────────────────────────
 function cleanName(raw) {
   if (!raw) return '';
   let name = raw.trim();
 
-  // Strip "DEPTCODE - SECTION  " prefix
-  const m1 = name.match(/^[A-Z]{2,5}[\dA-Z]{3,}[A-Z]?\s*-\s*\d+\s{1,}(.+)$/i);
-  if (m1) {
-    name = m1[1].trim();
+  // Pattern: CODE[A-Z]? OPTIONAL_SPACE - OPTIONAL_SPACE DIGIT(s) TWO+SPACES REST
+  // Handles: "SST85300A - 2    Social Studies..." and "MTH4SB301A - 1  AP Calc..."
+  // The key is: dept-code is all uppercase letters+digits, ends with optional letter,
+  // then " - N " or just "  " (two+ spaces) separator before the real name.
+  const m = name.match(
+    /^[A-Z]{1,6}[0-9][A-Z0-9]*[A-Z]?\s*(?:-\s*\d+)?\s{2,}(.+)$/
+  );
+  if (m) {
+    name = m[1].trim();
   } else {
-    const m2 = name.match(/^[A-Z]{2,5}\d{3,}[A-Z]?\s{2,}(.+)$/i);
+    // Fallback: if the string starts with a code token (letters+digits) followed
+    // by a single space + dash + space pattern, strip it
+    const m2 = name.match(/^[A-Z]{2,6}\d{3,}[A-Z]?\s*-\s*\d+\s+(.+)$/);
     if (m2) name = m2[1].trim();
   }
 
-  // Strip trailing " S1" or " S2"
+  // Strip trailing semester marker " S1" or " S2" (case-insensitive)
   name = name.replace(/\s+S[12]\s*$/i, '').trim();
-  // Strip trailing period/section " - Per 3"
+
+  // Strip trailing period/section marker " - Per 3" or " Period 2"
   name = name.replace(/\s*[-–]?\s*(period|per)\s*\d+\s*$/i, '').trim();
+
+  // Collapse any internal double-spaces left over
+  name = name.replace(/\s{2,}/g, ' ').trim();
 
   return name;
 }
