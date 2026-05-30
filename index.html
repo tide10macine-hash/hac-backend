@@ -3,218 +3,520 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Frisco ISD GPA Calculator</title>
+  <title>GradeFlow — Frisco ISD GPA</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=DM+Mono:wght@400;500&family=Instrument+Sans:wght@400;500;600&display=swap" rel="stylesheet" />
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     :root {
-      --green:       #1D9E75;
-      --green-dark:  #0F6E56;
-      --green-mid:   #9FE1CB;
-      --text:        #1a1a1a;
-      --text-muted:  #6b7280;
-      --text-faint:  #9ca3af;
-      --bg:          #f3f4f6;
-      --surface:     #ffffff;
-      --border:      rgba(0,0,0,0.09);
-      --border-strong: rgba(0,0,0,0.16);
-      --radius:      10px;
-      --radius-lg:   16px;
+      --ink:       #0d0f12;
+      --ink-2:     #3a3d44;
+      --ink-3:     #787e8c;
+      --ink-4:     #adb3bf;
+      --bg:        #f0f1f5;
+      --surface:   #ffffff;
+      --surface-2: #f7f8fa;
+      --border:    rgba(13,15,18,0.08);
+      --border-2:  rgba(13,15,18,0.14);
+      --accent:    #3d5aff;
+      --accent-dim:#e8ebff;
+      --accent-dk: #2640d4;
+      --green:     #18b97a;
+      --green-dim: #e0f7ee;
+      --red:       #e84040;
+      --red-dim:   #fdeaea;
+      --yellow:    #f0a832;
+      --yellow-dim:#fff3dc;
+      --r:         8px;
+      --r-lg:      14px;
+      --r-xl:      20px;
     }
 
     body {
-      font-family: 'DM Sans', sans-serif;
+      font-family: 'Instrument Sans', sans-serif;
       background: var(--bg);
-      color: var(--text);
+      color: var(--ink);
+      min-height: 100vh;
+    }
+
+    /* ── SPLASH / LOGIN ──────────────────────────────────────── */
+    #screen-login {
       min-height: 100vh;
       display: flex;
-      align-items: flex-start;
+      align-items: center;
       justify-content: center;
-      padding: 2rem 1rem 5rem;
+      padding: 2rem 1rem;
+      background:
+        radial-gradient(ellipse 80% 50% at 110% 0%, rgba(61,90,255,0.12) 0%, transparent 60%),
+        radial-gradient(ellipse 60% 40% at -10% 100%, rgba(24,185,122,0.1) 0%, transparent 55%),
+        var(--bg);
+    }
+    #screen-login.hidden { display: none; }
+
+    .login-wrap {
+      width: 100%;
+      max-width: 420px;
     }
 
-    .app { width: 100%; max-width: 760px; }
-
-    .logo {
-      display: flex; align-items: center; gap: 8px;
-      font-size: 11px; font-weight: 600; letter-spacing: 0.1em;
-      text-transform: uppercase; color: var(--text-muted); margin-bottom: 2.5rem;
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 2rem;
     }
-    .logo-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); }
-
-    .screen { display: none; }
-    .screen.active { display: block; }
+    .brand-mark {
+      width: 36px; height: 36px;
+      background: var(--ink);
+      border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .brand-mark svg { color: #fff; }
+    .brand-name {
+      font-family: 'Syne', sans-serif;
+      font-weight: 800;
+      font-size: 20px;
+      letter-spacing: -0.02em;
+      color: var(--ink);
+    }
+    .brand-sub {
+      font-size: 11px;
+      color: var(--ink-3);
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      margin-left: auto;
+    }
 
     .login-card {
-      background: var(--surface); border: 1px solid var(--border);
-      border-radius: var(--radius-lg); padding: 2rem; max-width: 480px; margin: 0 auto;
+      background: var(--surface);
+      border: 1px solid var(--border-2);
+      border-radius: var(--r-xl);
+      padding: 2rem;
+      box-shadow: 0 4px 40px rgba(13,15,18,0.08);
     }
-    h1 { font-size: 23px; font-weight: 600; margin-bottom: 0.35rem; }
-    .subtitle { font-size: 14px; color: var(--text-muted); margin-bottom: 1.5rem; line-height: 1.6; }
 
-    .warning-box {
-      display: flex; gap: 10px; background: #fffbeb; border: 1px solid #fcd34d;
-      border-radius: var(--radius); padding: 11px 13px; font-size: 12.5px; color: #92400e;
-      margin-bottom: 1.5rem; line-height: 1.5;
+    .login-card h1 {
+      font-family: 'Syne', sans-serif;
+      font-weight: 700;
+      font-size: 26px;
+      letter-spacing: -0.03em;
+      line-height: 1.1;
+      margin-bottom: 0.4rem;
     }
-    .warning-box svg { flex-shrink: 0; margin-top: 1px; }
+    .login-card h1 em { font-style: normal; color: var(--accent); }
+
+    .login-sub {
+      font-size: 13.5px;
+      color: var(--ink-3);
+      line-height: 1.6;
+      margin-bottom: 1.5rem;
+    }
+
+    .privacy-note {
+      display: flex;
+      gap: 9px;
+      background: var(--yellow-dim);
+      border: 1px solid rgba(240,168,50,0.3);
+      border-radius: var(--r);
+      padding: 10px 12px;
+      font-size: 12px;
+      color: #7a4b00;
+      line-height: 1.5;
+      margin-bottom: 1.5rem;
+    }
+    .privacy-note svg { flex-shrink: 0; margin-top: 1px; color: var(--yellow); }
 
     .field { margin-bottom: 1rem; }
-    .field label { display: block; font-size: 12px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-muted); margin-bottom: 5px; }
-    .field input {
-      width: 100%; font-family: 'DM Sans', sans-serif; font-size: 15px;
-      padding: 10px 13px; border: 1px solid var(--border-strong);
-      border-radius: var(--radius); background: var(--surface); color: var(--text);
-      transition: border-color 0.15s, box-shadow 0.15s;
+    .field label {
+      display: block;
+      font-size: 11.5px;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--ink-3);
+      margin-bottom: 6px;
     }
-    .field input:focus { outline: none; border-color: var(--green); box-shadow: 0 0 0 3px rgba(29,158,117,0.14); }
+    .field input {
+      width: 100%;
+      font-family: 'Instrument Sans', sans-serif;
+      font-size: 15px;
+      padding: 11px 14px;
+      border: 1.5px solid var(--border-2);
+      border-radius: var(--r);
+      background: var(--surface);
+      color: var(--ink);
+      transition: border-color 0.15s, box-shadow 0.15s;
+      outline: none;
+    }
+    .field input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(61,90,255,0.12);
+    }
 
     .btn-primary {
-      width: 100%; font-family: 'DM Sans', sans-serif; font-size: 15px; font-weight: 600;
-      padding: 11px; background: var(--green); color: #fff; border: none;
-      border-radius: var(--radius); cursor: pointer; margin-top: 0.4rem;
-      transition: background 0.15s, transform 0.1s;
+      width: 100%;
+      font-family: 'Instrument Sans', sans-serif;
+      font-size: 15px;
+      font-weight: 600;
+      padding: 12px;
+      background: var(--ink);
+      color: #fff;
+      border: none;
+      border-radius: var(--r);
+      cursor: pointer;
+      margin-top: 0.5rem;
+      transition: background 0.15s, transform 0.1s, opacity 0.15s;
     }
-    .btn-primary:hover  { background: var(--green-dark); }
+    .btn-primary:hover { background: var(--ink-2); }
     .btn-primary:active { transform: scale(0.99); }
-    .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+    .btn-primary:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
 
-    .error-msg { display: none; align-items: center; gap: 7px; color: #dc2626; font-size: 13px; margin-top: 11px; }
-
-    .demo-link { text-align: center; margin-top: 1.2rem; font-size: 13px; color: var(--text-muted); }
-    .demo-link a { color: var(--green); text-decoration: none; font-weight: 500; }
-    .demo-link a:hover { text-decoration: underline; }
-
-    .dash-header {
-      display: flex; align-items: flex-start; justify-content: space-between;
-      margin-bottom: 1.5rem; gap: 1rem;
+    .login-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-top: 1.1rem;
     }
-    .dash-header h2    { font-size: 20px; font-weight: 600; }
-    .dash-header .sub  { font-size: 13px; color: var(--text-muted); margin-top: 2px; }
-
-    .btn-ghost {
-      font-family: 'DM Sans', sans-serif; font-size: 13px; padding: 7px 13px;
-      border: 1px solid var(--border-strong); border-radius: var(--radius);
-      background: transparent; color: var(--text-muted); cursor: pointer;
-      white-space: nowrap; transition: background 0.15s;
+    .login-footer .err {
+      display: none;
+      align-items: center;
+      gap: 6px;
+      font-size: 12.5px;
+      color: var(--red);
     }
-    .btn-ghost:hover { background: var(--surface); }
-
-    .gpa-grid {
-      display: grid; grid-template-columns: repeat(3, 1fr);
-      gap: 10px; margin-bottom: 1.5rem;
+    .login-footer .err.show { display: flex; }
+    .demo-btn {
+      font-size: 13px;
+      color: var(--accent);
+      background: none;
+      border: none;
+      cursor: pointer;
+      font-family: inherit;
+      font-weight: 500;
+      margin-left: auto;
     }
-    .gpa-card {
-      background: var(--surface); border: 1px solid var(--border);
-      border-radius: var(--radius-lg); padding: 1rem 1.1rem;
-    }
-    .gpa-card .label {
-      font-size: 11px; font-weight: 600; letter-spacing: 0.07em;
-      text-transform: uppercase; color: var(--text-muted); margin-bottom: 5px;
-    }
-    .gpa-card .value { font-size: 28px; font-weight: 600; color: var(--text); line-height: 1; }
-    .gpa-card .value.green { color: var(--green); }
-    .gpa-card .sub-val { font-size: 11px; color: var(--text-faint); margin-top: 3px; }
+    .demo-btn:hover { text-decoration: underline; }
 
-    .table-wrap {
-      background: var(--surface); border: 1px solid var(--border);
-      border-radius: var(--radius-lg); overflow-x: auto; margin-bottom: 1.5rem;
-    }
-    .section-label {
-      font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase;
-      color: var(--text-muted); padding: 13px 16px 9px; border-bottom: 1px solid var(--border);
-    }
-    table  { width: 100%; border-collapse: collapse; }
-    thead th {
-      text-align: left; font-size: 11px; font-weight: 600; letter-spacing: 0.05em;
-      text-transform: uppercase; color: var(--text-faint);
-      padding: 9px 12px; border-bottom: 1px solid var(--border); white-space: nowrap;
-    }
-    thead th.sem-col { color: #6b7280; background: #f9fafb; }
-    tbody tr:not(:last-child) td { border-bottom: 1px solid var(--border); }
-    tbody tr:hover td { background: #fafafa; }
-    tbody td { padding: 10px 12px; font-size: 13px; vertical-align: middle; white-space: nowrap; }
-
-    .course-name { font-weight: 500; font-size: 13.5px; }
-
-    .badge { display: inline-block; font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 20px; margin-left: 5px; vertical-align: middle; letter-spacing: 0.03em; }
-    .badge-ap  { background: #fde8e8; color: #991b1b; }
-    .badge-adv { background: #e0f2fe; color: #075985; }
-
-    .grade-pill { display: inline-block; font-size: 12px; font-weight: 600; padding: 3px 10px; border-radius: 20px; min-width: 44px; text-align: center; }
-    .g-a { background: #dcfce7; color: #166534; }
-    .g-b { background: #dbeafe; color: #1e40af; }
-    .g-c { background: #fef9c3; color: #854d0e; }
-    .g-d { background: #fee2e2; color: #991b1b; }
-    .g-f { background: #fecaca; color: #7f1d1d; }
-
-    .sem-cell { background: #f9fafb; }
-    .pts-cell  { font-weight: 600; color: var(--text-muted); font-size: 13px; }
-
-    .spinner {
-      display: inline-block; width: 17px; height: 17px;
-      border: 2px solid var(--green-mid); border-top-color: var(--green);
-      border-radius: 50%; animation: spin 0.7s linear infinite; vertical-align: middle; margin-right: 7px;
+    .spin {
+      display: inline-block; width: 16px; height: 16px;
+      border: 2px solid rgba(255,255,255,0.35); border-top-color: #fff;
+      border-radius: 50%; animation: spin 0.65s linear infinite;
+      vertical-align: middle; margin-right: 7px;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
 
-    .loading-row td { padding: 2.5rem; text-align: center; color: var(--text-muted); font-size: 14px; }
+    /* ── DASHBOARD ───────────────────────────────────────────── */
+    #screen-dash { display: none; }
+    #screen-dash.active { display: block; }
 
-    .what-if-card {
-      background: var(--surface); border: 1px solid var(--border);
-      border-radius: var(--radius-lg); padding: 1.25rem 1.5rem; margin-bottom: 1.5rem;
+    .topbar {
+      background: var(--ink);
+      padding: 0 1.5rem;
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      height: 56px;
     }
-    .what-if-card h3 { font-size: 14px; font-weight: 600; margin-bottom: 2px; }
-    .what-if-card .desc { font-size: 12.5px; color: var(--text-muted); margin-bottom: 13px; }
-    .wi-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
-    .wi-row select, .wi-row input[type="number"] {
-      font-family: 'DM Sans', sans-serif; font-size: 14px; padding: 8px 11px;
-      border: 1px solid var(--border-strong); border-radius: var(--radius);
-      background: var(--surface); color: var(--text);
+    .topbar-brand {
+      font-family: 'Syne', sans-serif;
+      font-weight: 800;
+      font-size: 17px;
+      letter-spacing: -0.02em;
+      color: #fff;
     }
-    .wi-row select:focus, .wi-row input:focus { outline: none; border-color: var(--green); box-shadow: 0 0 0 3px rgba(29,158,117,0.12); }
-    .wi-row select { flex: 2; min-width: 180px; }
-    .wi-row input  { flex: 1; min-width: 110px; }
-    .wi-result { margin-top: 11px; font-size: 14px; color: var(--text-muted); min-height: 20px; }
-    .wi-result .highlight { font-weight: 600; color: var(--green); }
-    .wi-result .diff { font-size: 12px; color: var(--text-faint); margin-left: 4px; }
+    .topbar-student {
+      font-size: 13px;
+      color: rgba(255,255,255,0.45);
+      margin-left: 4px;
+    }
+    .topbar-student span { color: rgba(255,255,255,0.8); }
+    .btn-out {
+      margin-left: auto;
+      font-family: 'Instrument Sans', sans-serif;
+      font-size: 12px;
+      font-weight: 500;
+      padding: 6px 12px;
+      border: 1px solid rgba(255,255,255,0.2);
+      border-radius: 6px;
+      background: transparent;
+      color: rgba(255,255,255,0.6);
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .btn-out:hover { background: rgba(255,255,255,0.08); color: #fff; }
 
-    .scale-legend {
-      background: var(--surface); border: 1px solid var(--border);
-      border-radius: var(--radius-lg); padding: 1rem 1.25rem; margin-bottom: 1.5rem;
+    .dash-body {
+      max-width: 860px;
+      margin: 0 auto;
+      padding: 2rem 1.25rem 5rem;
     }
-    .scale-legend h4 { font-size: 11px; font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase; color: var(--text-muted); margin-bottom: 10px; }
-    .scale-row { display: flex; gap: 6px; flex-wrap: wrap; }
-    .scale-chip {
-      font-size: 12px; padding: 4px 11px; border-radius: 20px; font-weight: 500;
+
+    /* GPA summary strip */
+    .gpa-strip {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 10px;
+      margin-bottom: 1.75rem;
+    }
+    .gpa-tile {
+      background: var(--surface);
       border: 1px solid var(--border);
+      border-radius: var(--r-lg);
+      padding: 1.1rem 1.25rem;
+      position: relative;
+      overflow: hidden;
     }
-    .scale-chip strong { font-weight: 700; }
+    .gpa-tile.primary {
+      background: var(--ink);
+      border-color: transparent;
+    }
+    .gpa-tile.primary::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(ellipse 80% 60% at 100% 0%, rgba(61,90,255,0.4) 0%, transparent 65%);
+      pointer-events: none;
+    }
+    .gpa-tile-label {
+      font-size: 10.5px;
+      font-weight: 600;
+      letter-spacing: 0.09em;
+      text-transform: uppercase;
+      color: var(--ink-3);
+      margin-bottom: 6px;
+    }
+    .gpa-tile.primary .gpa-tile-label { color: rgba(255,255,255,0.45); }
+    .gpa-tile-val {
+      font-family: 'DM Mono', monospace;
+      font-size: 34px;
+      font-weight: 500;
+      color: var(--ink);
+      line-height: 1;
+    }
+    .gpa-tile.primary .gpa-tile-val { color: #fff; }
+    .gpa-tile-sub {
+      font-size: 11px;
+      color: var(--ink-4);
+      margin-top: 4px;
+    }
+    .gpa-tile.primary .gpa-tile-sub { color: rgba(255,255,255,0.35); }
 
-    .footer-note { font-size: 11.5px; color: var(--text-faint); text-align: center; line-height: 1.7; }
+    /* Quarter tab bar */
+    .tab-section {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--r-lg);
+      overflow: hidden;
+      margin-bottom: 1.5rem;
+    }
 
-    @media (max-width: 520px) {
-      .gpa-card .value { font-size: 22px; }
-      .gpa-grid { gap: 8px; }
+    .tab-header {
+      display: flex;
+      align-items: center;
+      border-bottom: 1px solid var(--border);
+      padding: 0 4px;
+      gap: 2px;
+      background: var(--surface-2);
+    }
+    .tab-btn {
+      font-family: 'Instrument Sans', sans-serif;
+      font-size: 13px;
+      font-weight: 500;
+      padding: 11px 18px;
+      border: none;
+      background: transparent;
+      color: var(--ink-3);
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -1px;
+      transition: color 0.15s;
+      white-space: nowrap;
+    }
+    .tab-btn:hover { color: var(--ink); }
+    .tab-btn.active {
+      color: var(--accent);
+      border-bottom-color: var(--accent);
+      font-weight: 600;
+    }
+
+    .tab-pane { display: none; }
+    .tab-pane.active { display: block; }
+
+    /* Course table */
+    .course-table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    .course-table th {
+      text-align: left;
+      font-size: 10.5px;
+      font-weight: 600;
+      letter-spacing: 0.07em;
+      text-transform: uppercase;
+      color: var(--ink-4);
+      padding: 10px 16px;
+      border-bottom: 1px solid var(--border);
+      white-space: nowrap;
+      background: var(--surface-2);
+    }
+    .course-table td {
+      padding: 12px 16px;
+      font-size: 13.5px;
+      vertical-align: middle;
+      border-bottom: 1px solid var(--border);
+    }
+    .course-table tbody tr:last-child td { border-bottom: none; }
+    .course-table tbody tr:hover td { background: var(--surface-2); }
+
+    .c-name {
+      font-weight: 500;
+      font-size: 14px;
+      color: var(--ink);
+    }
+    .c-badge {
+      display: inline-block;
+      font-size: 9.5px;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      padding: 2px 6px;
+      border-radius: 4px;
+      margin-left: 6px;
+      vertical-align: middle;
+    }
+    .badge-ap  { background: var(--red-dim); color: #b91c1c; }
+    .badge-adv { background: var(--accent-dim); color: #2440b0; }
+
+    .grade-chip {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-family: 'DM Mono', monospace;
+      font-size: 13px;
+      font-weight: 500;
+      padding: 4px 11px;
+      border-radius: 6px;
+      min-width: 52px;
+    }
+    .ga { background: var(--green-dim); color: #0e7a4f; }
+    .gb { background: var(--accent-dim); color: #2440b0; }
+    .gc { background: var(--yellow-dim); color: #8a4c00; }
+    .gd { background: var(--red-dim); color: #b91c1c; }
+    .gf { background: #fee2e2; color: #7f1d1d; }
+    .g-null { color: var(--ink-4); font-size: 12px; }
+
+    .pts-badge {
+      font-family: 'DM Mono', monospace;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--ink-2);
+    }
+
+    /* Scale bar */
+    .scale-bar {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      padding: 12px 16px;
+      border-top: 1px solid var(--border);
+      background: var(--surface-2);
+    }
+    .scale-chip {
+      font-size: 11.5px;
+      padding: 3px 10px;
+      border-radius: 5px;
+      font-weight: 500;
+      border: 1px solid var(--border-2);
+      background: var(--surface);
+      color: var(--ink-2);
+    }
+
+    /* What-if panel */
+    .whatif-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--r-lg);
+      padding: 1.25rem 1.5rem;
+      margin-bottom: 1.5rem;
+    }
+    .whatif-card h3 {
+      font-family: 'Syne', sans-serif;
+      font-size: 15px;
+      font-weight: 700;
+      margin-bottom: 3px;
+    }
+    .whatif-desc { font-size: 12.5px; color: var(--ink-3); margin-bottom: 1rem; }
+    .wi-row { display: flex; gap: 10px; flex-wrap: wrap; }
+    .wi-row select, .wi-row input {
+      font-family: 'Instrument Sans', sans-serif;
+      font-size: 14px;
+      padding: 9px 12px;
+      border: 1.5px solid var(--border-2);
+      border-radius: var(--r);
+      background: var(--surface);
+      color: var(--ink);
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    .wi-row select:focus, .wi-row input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(61,90,255,0.1);
+    }
+    .wi-row select { flex: 2; min-width: 200px; }
+    .wi-row input  { flex: 1; min-width: 120px; }
+    .wi-result { margin-top: 10px; font-size: 13.5px; color: var(--ink-3); min-height: 20px; }
+    .wi-result .hi { font-weight: 600; color: var(--green); font-family: 'DM Mono', monospace; }
+    .wi-result .diff { font-size: 12px; color: var(--ink-4); margin-left: 6px; }
+
+    .footer-note {
+      font-size: 11.5px;
+      color: var(--ink-4);
+      text-align: center;
+      line-height: 1.8;
+    }
+
+    /* Loading skeleton */
+    .skeleton-row td {
+      padding: 2.5rem;
+      text-align: center;
+      color: var(--ink-4);
+      font-size: 13.5px;
+    }
+    .sk-spin {
+      display: inline-block; width: 15px; height: 15px;
+      border: 2px solid rgba(61,90,255,0.2); border-top-color: var(--accent);
+      border-radius: 50%; animation: spin 0.7s linear infinite;
+      vertical-align: middle; margin-right: 7px;
+    }
+
+    @media (max-width: 560px) {
+      .gpa-strip { grid-template-columns: 1fr 1fr; }
+      .gpa-tile.primary { grid-column: span 2; }
+      .gpa-tile-val { font-size: 28px; }
+      .tab-btn { padding: 10px 12px; font-size: 12px; }
     }
   </style>
 </head>
 <body>
-<div class="app">
-  <div class="logo"><span class="logo-dot"></span>Frisco ISD GPA Calculator</div>
 
-  <!-- LOGIN -->
-  <div class="screen active" id="screen-login">
+<!-- ── LOGIN ── -->
+<div id="screen-login">
+  <div class="login-wrap">
+    <div class="brand">
+      <div class="brand-mark">
+        <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+      </div>
+      <span class="brand-name">GradeFlow</span>
+      <span class="brand-sub">Frisco ISD</span>
+    </div>
+
     <div class="login-card">
-      <h1>Check your GPA</h1>
-      <p class="subtitle">Sign in with your HAC credentials. Your grades are fetched directly from hac.friscoisd.org.</p>
+      <h1>Check your <em>GPA</em></h1>
+      <p class="login-sub">Sign in with your HAC credentials. Grades are pulled live from hac.friscoisd.org and your password is never stored.</p>
 
-      <div class="warning-box">
-        <svg width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/></svg>
-        <span>Your credentials are sent directly to HAC and are <strong>never stored</strong>. Not affiliated with Frisco ISD.</span>
+      <div class="privacy-note">
+        <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/></svg>
+        <span>Credentials sent <strong>directly to HAC</strong> — never logged or stored. Not affiliated with Frisco ISD.</span>
       </div>
 
       <div class="field">
@@ -228,78 +530,125 @@
 
       <button class="btn-primary" id="btn-login">Load my grades</button>
 
-      <div class="error-msg" id="login-error">
-        <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
-        <span id="error-text">Login failed.</span>
+      <div class="login-footer">
+        <div class="err" id="login-err">
+          <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+          <span id="err-text">Login failed.</span>
+        </div>
+        <button class="demo-btn" id="btn-demo">Try demo data →</button>
       </div>
-
-      <p class="demo-link">No login? <a href="#" id="btn-demo">Try demo data</a></p>
     </div>
   </div>
+</div>
 
-  <!-- DASHBOARD -->
-  <div class="screen" id="screen-dash">
+<!-- ── DASHBOARD ── -->
+<div id="screen-dash">
+  <div class="topbar">
+    <div class="topbar-brand">GradeFlow</div>
+    <div class="topbar-student">for <span id="student-name-top">—</span></div>
+    <button class="btn-out" id="btn-logout">Sign out</button>
+  </div>
 
-    <div class="dash-header">
-      <div>
-        <h2 id="student-name">Your Grades</h2>
-        <div class="sub" id="grade-level"></div>
+  <div class="dash-body">
+    <!-- GPA tiles -->
+    <div class="gpa-strip">
+      <div class="gpa-tile primary">
+        <div class="gpa-tile-label">Year GPA</div>
+        <div class="gpa-tile-val" id="gpa-yr">—</div>
+        <div class="gpa-tile-sub">Sem 1 + Sem 2 average</div>
       </div>
-      <button class="btn-ghost" id="btn-logout">← Sign out</button>
-    </div>
-
-    <div class="gpa-grid">
-      <div class="gpa-card">
-        <div class="label">Year GPA</div>
-        <div class="value green" id="gpa-year">—</div>
-        <div class="sub-val">Sem 1 + Sem 2 ÷ 2</div>
+      <div class="gpa-tile">
+        <div class="gpa-tile-label">Semester 1</div>
+        <div class="gpa-tile-val" id="gpa-s1">—</div>
+        <div class="gpa-tile-sub">Q1 &amp; Q2 avg</div>
       </div>
-      <div class="gpa-card">
-        <div class="label">Semester 1</div>
-        <div class="value" id="gpa-sem1">—</div>
-        <div class="sub-val">Q1 + Q2 averaged</div>
-      </div>
-      <div class="gpa-card">
-        <div class="label">Semester 2</div>
-        <div class="value" id="gpa-sem2">—</div>
-        <div class="sub-val">Q3 + Q4 averaged</div>
-      </div>
-    </div>
-
-    <div class="table-wrap">
-      <div class="section-label">Grades by quarter</div>
-      <table>
-        <thead>
-          <tr>
-            <th>Class</th>
-            <th>Q1</th>
-            <th>Q2</th>
-            <th class="sem-col">Sem 1</th>
-            <th>Q3</th>
-            <th>Q4</th>
-            <th class="sem-col">Sem 2</th>
-            <th>GPA pts</th>
-          </tr>
-        </thead>
-        <tbody id="courses-body">
-          <tr class="loading-row"><td colspan="8"><span class="spinner"></span>Loading grades…</td></tr>
-        </tbody>
-      </table>
-    </div>
-
-    <div class="scale-legend">
-      <h4>GPA Scale</h4>
-      <div class="scale-row">
-        <span class="scale-chip" style="background:#fde8e8;color:#991b1b;"><strong>AP</strong> — max 6.0</span>
-        <span class="scale-chip" style="background:#e0f2fe;color:#075985;"><strong>Advanced</strong> — max 5.5</span>
-        <span class="scale-chip" style="background:#f3f4f6;color:#374151;"><strong>On-Level</strong> — max 5.0</span>
-        <span class="scale-chip" style="background:#f9fafb;color:#6b7280;">Each point below 100 = −0.1</span>
+      <div class="gpa-tile">
+        <div class="gpa-tile-label">Semester 2</div>
+        <div class="gpa-tile-val" id="gpa-s2">—</div>
+        <div class="gpa-tile-sub">Q3 &amp; Q4 avg</div>
       </div>
     </div>
 
-    <div class="what-if-card">
+    <!-- Tab section -->
+    <div class="tab-section">
+      <div class="tab-header">
+        <button class="tab-btn active" data-tab="q1">Quarter 1</button>
+        <button class="tab-btn" data-tab="q2">Quarter 2</button>
+        <button class="tab-btn active-sem" data-tab="s1">Sem 1 Avg</button>
+        <button class="tab-btn" data-tab="q3">Quarter 3</button>
+        <button class="tab-btn" data-tab="q4">Quarter 4</button>
+        <button class="tab-btn" data-tab="s2">Sem 2 Avg</button>
+        <button class="tab-btn" data-tab="all">All Quarters</button>
+      </div>
+
+      <!-- Q1 -->
+      <div class="tab-pane active" id="tab-q1">
+        <table class="course-table">
+          <thead><tr><th>Course</th><th>Q1 Grade</th><th>GPA pts</th></tr></thead>
+          <tbody id="body-q1"><tr class="skeleton-row"><td colspan="3"><span class="sk-spin"></span>Loading…</td></tr></tbody>
+        </table>
+      </div>
+
+      <!-- Q2 -->
+      <div class="tab-pane" id="tab-q2">
+        <table class="course-table">
+          <thead><tr><th>Course</th><th>Q2 Grade</th><th>GPA pts</th></tr></thead>
+          <tbody id="body-q2"></tbody>
+        </table>
+      </div>
+
+      <!-- Sem 1 -->
+      <div class="tab-pane" id="tab-s1">
+        <table class="course-table">
+          <thead><tr><th>Course</th><th>Q1</th><th>Q2</th><th>Sem 1 Avg</th><th>GPA pts</th></tr></thead>
+          <tbody id="body-s1"></tbody>
+        </table>
+      </div>
+
+      <!-- Q3 -->
+      <div class="tab-pane" id="tab-q3">
+        <table class="course-table">
+          <thead><tr><th>Course</th><th>Q3 Grade</th><th>GPA pts</th></tr></thead>
+          <tbody id="body-q3"></tbody>
+        </table>
+      </div>
+
+      <!-- Q4 -->
+      <div class="tab-pane" id="tab-q4">
+        <table class="course-table">
+          <thead><tr><th>Course</th><th>Q4 Grade</th><th>GPA pts</th></tr></thead>
+          <tbody id="body-q4"></tbody>
+        </table>
+      </div>
+
+      <!-- Sem 2 -->
+      <div class="tab-pane" id="tab-s2">
+        <table class="course-table">
+          <thead><tr><th>Course</th><th>Q3</th><th>Q4</th><th>Sem 2 Avg</th><th>GPA pts</th></tr></thead>
+          <tbody id="body-s2"></tbody>
+        </table>
+      </div>
+
+      <!-- All -->
+      <div class="tab-pane" id="tab-all">
+        <table class="course-table">
+          <thead><tr><th>Course</th><th>Q1</th><th>Q2</th><th>Q3</th><th>Q4</th><th>Year GPA pts</th></tr></thead>
+          <tbody id="body-all"></tbody>
+        </table>
+      </div>
+
+      <div class="scale-bar">
+        <span class="scale-chip" style="background:#fde8e8;color:#991b1b;border-color:transparent"><strong>AP</strong> max 6.0</span>
+        <span class="scale-chip" style="background:#e8ebff;color:#2440b0;border-color:transparent"><strong>Advanced</strong> max 5.5</span>
+        <span class="scale-chip" style="background:var(--surface-2);"><strong>On-Level</strong> max 5.0</span>
+        <span class="scale-chip">Each point below 100 = −0.1</span>
+      </div>
+    </div>
+
+    <!-- What-if -->
+    <div class="whatif-card">
       <h3>What-if calculator</h3>
-      <p class="desc">See how changing one Q4 grade would shift your GPA</p>
+      <p class="whatif-desc">See how a different Q4 grade would change your year GPA</p>
       <div class="wi-row">
         <select id="wi-course"></select>
         <input type="number" id="wi-grade" placeholder="New Q4 grade" min="0" max="100" step="1" />
@@ -308,63 +657,36 @@
     </div>
 
     <p class="footer-note">
-      Year GPA = (Sem 1 + Sem 2) ÷ 2 &nbsp;·&nbsp; Each Sem = average of class GPA points for that semester.<br>
-      Each class avg = (Q1+Q2)÷2 for Sem 1, (Q3+Q4)÷2 for Sem 2, then converted to GPA points.<br>
-      Data scraped live from hac.friscoisd.org. Not affiliated with Frisco ISD.
+      Year GPA = (Sem 1 + Sem 2) ÷ 2 &nbsp;·&nbsp; Each semester = avg of course GPA points<br>
+      GPA pts: start at max (AP=6, Adv=5.5, OL=5) and subtract 0.1 per point below 100<br>
+      Live data from hac.friscoisd.org · Not affiliated with Frisco ISD
     </p>
-    <div style="margin-top:1rem;text-align:center;">
-      <button class="btn-ghost" id="btn-debug" style="font-size:11px;opacity:0.6;">Show quarter debug info</button>
-    </div>
-    <pre id="debug-box" style="display:none;margin-top:0.75rem;background:#111;color:#4ade80;font-size:11px;padding:14px;border-radius:10px;overflow-x:auto;white-space:pre-wrap;line-height:1.6;"></pre>
-
   </div>
 </div>
 
 <script>
   let courseData = [];
 
+  /* ── helpers ── */
   function courseLevel(name) {
     const n = (name || '').toLowerCase().trim();
     if (/(?:^|\s)ap(?:\s|$)/.test(n)) return 'ap';
     if (/\badv(anced)?\b/.test(n)) return 'adv';
     return 'ol';
   }
-
   function toPoints(avg, name) {
     if (avg === null || avg === undefined || isNaN(avg)) return null;
     const level = courseLevel(name);
     const max   = level === 'ap' ? 6.0 : level === 'adv' ? 5.5 : 5.0;
-    const rounded = avg % 1 === 0.5 ? Math.ceil(avg) : Math.round(avg);
-    return Math.max(0, Math.round((max - (100 - rounded) * 0.1) * 10) / 10);
+    const r     = avg % 1 === 0.5 ? Math.ceil(avg) : Math.round(avg);
+    return Math.max(0, Math.round((max - (100 - r) * 0.1) * 10) / 10);
   }
-
-  function levelBadge(name) {
-    const l = courseLevel(name);
-    if (l === 'ap')  return '<span class="badge badge-ap">AP</span>';
-    if (l === 'adv') return '<span class="badge badge-adv">Adv</span>';
-    return '';
-  }
-
   function avg2(a, b) {
     const va = a !== null && a !== undefined && !isNaN(a);
     const vb = b !== null && b !== undefined && !isNaN(b);
     if (va && vb) return (a + b) / 2;
-    if (va) return a;
-    if (vb) return b;
-    return null;
+    if (va) return a; if (vb) return b; return null;
   }
-
-  function gradePill(v) {
-    if (v === null || v === undefined || isNaN(v))
-      return '<span style="color:#9ca3af;font-size:13px;">—</span>';
-    const d = v.toFixed(1);
-    if (v >= 90) return `<span class="grade-pill g-a">${d}</span>`;
-    if (v >= 80) return `<span class="grade-pill g-b">${d}</span>`;
-    if (v >= 70) return `<span class="grade-pill g-c">${d}</span>`;
-    if (v >= 60) return `<span class="grade-pill g-d">${d}</span>`;
-    return `<span class="grade-pill g-f">${d}</span>`;
-  }
-
   function semGPA(courses, sem) {
     const pts = courses.map(c => {
       const a = sem === 1 ? avg2(c.q1avg, c.q2avg) : avg2(c.q3avg, c.q4avg);
@@ -373,89 +695,179 @@
     if (!pts.length) return null;
     return pts.reduce((s, p) => s + p, 0) / pts.length;
   }
-
   function yearGPA(courses) {
-    const s1 = semGPA(courses, 1);
-    const s2 = semGPA(courses, 2);
+    const s1 = semGPA(courses, 1), s2 = semGPA(courses, 2);
     if (s1 !== null && s2 !== null) return (s1 + s2) / 2;
     return s1 ?? s2;
   }
+  function num(v) {
+    if (v === null || v === undefined) return null;
+    const n = parseFloat(v); return isNaN(n) ? null : n;
+  }
+  function chip(v) {
+    if (v === null || v === undefined || isNaN(v))
+      return '<span class="g-null">—</span>';
+    const d = v.toFixed(1);
+    if (v >= 90) return `<span class="grade-chip ga">${d}</span>`;
+    if (v >= 80) return `<span class="grade-chip gb">${d}</span>`;
+    if (v >= 70) return `<span class="grade-chip gc">${d}</span>`;
+    if (v >= 60) return `<span class="grade-chip gd">${d}</span>`;
+    return `<span class="grade-chip gf">${d}</span>`;
+  }
+  function badge(name) {
+    const l = courseLevel(name);
+    if (l === 'ap')  return '<span class="c-badge badge-ap">AP</span>';
+    if (l === 'adv') return '<span class="c-badge badge-adv">Adv</span>';
+    return '';
+  }
+  function ptsCell(pts) {
+    return pts !== null ? `<span class="pts-badge">${pts.toFixed(1)}</span>` : '<span class="g-null">—</span>';
+  }
 
+  /* ── tab switching ── */
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+      btn.classList.add('active');
+      document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+    });
+  });
+
+  /* ── render ── */
   function renderDash(name, level, courses) {
     courseData = courses;
+    document.getElementById('student-name-top').textContent = name || 'Student';
 
-    document.getElementById('student-name').textContent = name || 'Your Grades';
-    document.getElementById('grade-level').textContent  = level || '';
+    const s1 = semGPA(courses, 1), s2 = semGPA(courses, 2), yr = yearGPA(courses);
+    document.getElementById('gpa-yr').textContent = yr !== null ? yr.toFixed(2) : '—';
+    document.getElementById('gpa-s1').textContent = s1 !== null ? s1.toFixed(2) : '—';
+    document.getElementById('gpa-s2').textContent = s2 !== null ? s2.toFixed(2) : '—';
 
-    const s1  = semGPA(courses, 1);
-    const s2  = semGPA(courses, 2);
-    const yr  = yearGPA(courses);
+    const sel = document.getElementById('wi-course');
+    sel.innerHTML = '';
 
-    document.getElementById('gpa-year').textContent  = yr  !== null ? yr.toFixed(2)  : '—';
-    document.getElementById('gpa-sem1').textContent  = s1  !== null ? s1.toFixed(2)  : '—';
-    document.getElementById('gpa-sem2').textContent  = s2  !== null ? s2.toFixed(2)  : '—';
-
-    const tbody = document.getElementById('courses-body');
-    const sel   = document.getElementById('wi-course');
-    tbody.innerHTML = '';
-    sel.innerHTML   = '';
-
-    if (!courses.length) {
-      tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:2.5rem;color:#9ca3af">No courses found.</td></tr>';
-      return;
+    function fill(tbodyId, rowFn) {
+      const tbody = document.getElementById(tbodyId);
+      if (!tbody) return;
+      tbody.innerHTML = '';
+      if (!courses.length) {
+        tbody.innerHTML = '<tr><td colspan="10" style="padding:2.5rem;text-align:center;color:var(--ink-4)">No courses found.</td></tr>';
+        return;
+      }
+      courses.forEach((c, i) => tbody.insertAdjacentHTML('beforeend', rowFn(c, i)));
     }
 
-    courses.forEach((c, i) => {
-      const s1a  = avg2(c.q1avg, c.q2avg);
-      const s2a  = avg2(c.q3avg, c.q4avg);
-      const yA   = avg2(s1a, s2a);
-      const pts  = toPoints(yA, c.name);
+    // Q1
+    fill('body-q1', (c) => `<tr>
+      <td><span class="c-name">${c.name}${badge(c.name)}</span></td>
+      <td>${chip(c.q1avg)}</td>
+      <td>${ptsCell(toPoints(c.q1avg, c.name))}</td>
+    </tr>`);
 
-      const tr = document.createElement('tr');
-      tr.innerHTML = `
-        <td>
-          <div class="course-name">${c.name}${levelBadge(c.name)}</div>
-        </td>
-        <td>${gradePill(c.q1avg)}</td>
-        <td>${gradePill(c.q2avg)}</td>
-        <td class="sem-cell">${gradePill(s1a)}</td>
-        <td>${gradePill(c.q3avg)}</td>
-        <td>${gradePill(c.q4avg)}</td>
-        <td class="sem-cell">${gradePill(s2a)}</td>
-        <td class="pts-cell">${pts !== null ? pts.toFixed(1) : '—'}</td>
-      `;
-      tbody.appendChild(tr);
+    // Q2
+    fill('body-q2', (c) => `<tr>
+      <td><span class="c-name">${c.name}${badge(c.name)}</span></td>
+      <td>${chip(c.q2avg)}</td>
+      <td>${ptsCell(toPoints(c.q2avg, c.name))}</td>
+    </tr>`);
 
-      const opt = document.createElement('option');
-      opt.value = i;
-      opt.textContent = c.name;
-      sel.appendChild(opt);
+    // Sem 1
+    fill('body-s1', (c) => {
+      const a = avg2(c.q1avg, c.q2avg);
+      return `<tr>
+        <td><span class="c-name">${c.name}${badge(c.name)}</span></td>
+        <td>${chip(c.q1avg)}</td>
+        <td>${chip(c.q2avg)}</td>
+        <td>${chip(a)}</td>
+        <td>${ptsCell(toPoints(a, c.name))}</td>
+      </tr>`;
     });
 
+    // Q3
+    fill('body-q3', (c) => `<tr>
+      <td><span class="c-name">${c.name}${badge(c.name)}</span></td>
+      <td>${chip(c.q3avg)}</td>
+      <td>${ptsCell(toPoints(c.q3avg, c.name))}</td>
+    </tr>`);
+
+    // Q4
+    fill('body-q4', (c) => `<tr>
+      <td><span class="c-name">${c.name}${badge(c.name)}</span></td>
+      <td>${chip(c.q4avg)}</td>
+      <td>${ptsCell(toPoints(c.q4avg, c.name))}</td>
+    </tr>`);
+
+    // Sem 2
+    fill('body-s2', (c) => {
+      const a = avg2(c.q3avg, c.q4avg);
+      return `<tr>
+        <td><span class="c-name">${c.name}${badge(c.name)}</span></td>
+        <td>${chip(c.q3avg)}</td>
+        <td>${chip(c.q4avg)}</td>
+        <td>${chip(a)}</td>
+        <td>${ptsCell(toPoints(a, c.name))}</td>
+      </tr>`;
+    });
+
+    // All
+    fill('body-all', (c) => {
+      const ya = avg2(avg2(c.q1avg, c.q2avg), avg2(c.q3avg, c.q4avg));
+      return `<tr>
+        <td><span class="c-name">${c.name}${badge(c.name)}</span></td>
+        <td>${chip(c.q1avg)}</td>
+        <td>${chip(c.q2avg)}</td>
+        <td>${chip(c.q3avg)}</td>
+        <td>${chip(c.q4avg)}</td>
+        <td>${ptsCell(toPoints(ya, c.name))}</td>
+      </tr>`;
+    });
+
+    // What-if dropdown
+    courses.forEach((c, i) => {
+      const o = document.createElement('option'); o.value = i; o.textContent = c.name; sel.appendChild(o);
+    });
     document.getElementById('wi-result').innerHTML = '';
   }
 
-  ['wi-grade', 'wi-course'].forEach(id =>
-    document.getElementById(id).addEventListener('input', calcWhatIf)
-  );
-
+  /* ── what-if ── */
+  ['wi-grade','wi-course'].forEach(id => document.getElementById(id).addEventListener('input', calcWhatIf));
   function calcWhatIf() {
-    const sel    = document.getElementById('wi-course');
-    const newQ4  = parseFloat(document.getElementById('wi-grade').value);
-    const result = document.getElementById('wi-result');
-    if (!sel.options.length || isNaN(newQ4) || newQ4 < 0 || newQ4 > 100) {
-      result.innerHTML = ''; return;
-    }
-    const idx      = parseInt(sel.value);
-    const modified = courseData.map((c, i) => i === idx ? { ...c, q4avg: newQ4 } : c);
-    const before   = yearGPA(courseData);
-    const after    = yearGPA(modified);
-    const bStr     = before !== null ? before.toFixed(2) : '—';
-    const aStr     = after  !== null ? after.toFixed(2)  : '—';
-    const diff     = (before !== null && after !== null)
-      ? ((after - before) >= 0 ? '+' : '') + (after - before).toFixed(2) : '';
-    result.innerHTML = `New year GPA: <span class="highlight">${aStr}</span> <span class="diff">(${diff} from ${bStr})</span>`;
+    const sel = document.getElementById('wi-course');
+    const q4  = parseFloat(document.getElementById('wi-grade').value);
+    const res = document.getElementById('wi-result');
+    if (!sel.options.length || isNaN(q4) || q4 < 0 || q4 > 100) { res.innerHTML=''; return; }
+    const idx  = parseInt(sel.value);
+    const mod  = courseData.map((c,i) => i===idx ? {...c, q4avg: q4} : c);
+    const bef  = yearGPA(courseData), aft = yearGPA(mod);
+    const diff = (bef !== null && aft !== null) ? (aft-bef >= 0 ? '+' : '') + (aft-bef).toFixed(2) : '';
+    res.innerHTML = `New year GPA: <span class="hi">${aft !== null ? aft.toFixed(2) : '—'}</span> <span class="diff">(${diff} from ${bef !== null ? bef.toFixed(2) : '—'})</span>`;
   }
+
+  /* ── login flow ── */
+  function showLogin() {
+    document.getElementById('screen-login').classList.remove('hidden');
+    document.getElementById('screen-dash').classList.remove('active');
+  }
+  function showDash(name, level, courses) {
+    document.getElementById('screen-login').classList.add('hidden');
+    document.getElementById('screen-dash').classList.add('active');
+    renderDash(name, level, courses);
+    // reset to Q1 tab
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+    document.querySelector('[data-tab="q1"]').classList.add('active');
+    document.getElementById('tab-q1').classList.add('active');
+  }
+
+  document.getElementById('btn-logout').addEventListener('click', () => {
+    document.getElementById('hac-user').value = '';
+    document.getElementById('hac-pass').value = '';
+    courseData = [];
+    const btn = document.getElementById('btn-login');
+    btn.disabled = false; btn.textContent = 'Load my grades';
+    showLogin();
+  });
 
   document.getElementById('btn-login').addEventListener('click', doLogin);
   document.getElementById('hac-pass').addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
@@ -463,17 +875,17 @@
   async function doLogin() {
     const user  = document.getElementById('hac-user').value.trim();
     const pass  = document.getElementById('hac-pass').value;
-    const errEl = document.getElementById('login-error');
+    const errEl = document.getElementById('login-err');
     const btn   = document.getElementById('btn-login');
+    errEl.classList.remove('show');
 
-    errEl.style.display = 'none';
     if (!user || !pass) {
-      document.getElementById('error-text').textContent = 'Please enter your student ID and password.';
-      errEl.style.display = 'flex'; return;
+      document.getElementById('err-text').textContent = 'Please enter your student ID and password.';
+      errEl.classList.add('show'); return;
     }
 
     btn.disabled = true;
-    btn.innerHTML = '<span class="spinner" style="border-color:#9FE1CB;border-top-color:#fff;"></span> Loading grades…';
+    btn.innerHTML = '<span class="spin"></span>Loading grades…';
 
     try {
       const res = await fetch('/api/grades', {
@@ -485,23 +897,21 @@
       if (res.status === 401) throw new Error('Incorrect username or password.');
       if (!res.ok) {
         const e = await res.json().catch(() => ({}));
-        throw new Error(e.error || 'Server error — try again in a moment.');
+        throw new Error(e.error || 'Server error — try again.');
       }
 
       const data = await res.json();
-
       const courses = (data.courses || []).map(c => ({
         name:  c.name || 'Unknown',
         q1avg: num(c.q1avg),
         q2avg: num(c.q2avg),
         q3avg: num(c.q3avg),
         q4avg: num(c.q4avg ?? c.avg),
-      })).filter(c => c.name !== 'Unknown' &&
-        [c.q1avg, c.q2avg, c.q3avg, c.q4avg].some(v => v !== null));
+      })).filter(c => c.name !== 'Unknown' && [c.q1avg,c.q2avg,c.q3avg,c.q4avg].some(v => v !== null));
 
-      if (!courses.length) throw new Error('No grade data found. Check your credentials or try again.');
+      if (!courses.length) throw new Error('No grade data found. Check credentials or try again.');
 
-      let studentName = '', gradeLevel = '';
+      let studentName = '';
       const s = data.student || {};
       if (s.name && s.name.trim()) {
         const raw = s.name.trim();
@@ -510,76 +920,29 @@
           const first = (rest || '').trim().split(/\s+/)[0] || '';
           const tc = w => w ? w.charAt(0).toUpperCase() + w.slice(1).toLowerCase() : '';
           studentName = `${tc(first)} ${tc(last)}`.trim();
-        } else {
-          studentName = raw;
-        }
+        } else { studentName = raw; }
       }
-      if (s.grade && s.grade.trim()) {
-        gradeLevel = `Grade ${s.grade.trim()}${s.campus ? ' · ' + s.campus : ''}`;
-      }
-
-      window._lastDebug = data._debug;
+      const gradeLevel = s.grade ? `Grade ${s.grade.trim()}${s.campus ? ' · ' + s.campus : ''}` : '';
       showDash(studentName, gradeLevel, courses);
 
     } catch (e) {
-      document.getElementById('error-text').textContent = e.message || 'Something went wrong.';
-      errEl.style.display = 'flex';
+      document.getElementById('err-text').textContent = e.message || 'Something went wrong.';
+      errEl.classList.add('show');
       btn.disabled = false;
       btn.textContent = 'Load my grades';
     }
   }
 
-  function num(v) {
-    if (v === null || v === undefined) return null;
-    const n = parseFloat(v);
-    return isNaN(n) ? null : n;
-  }
-
-  document.getElementById('btn-demo').addEventListener('click', e => {
-    e.preventDefault();
-    showDash('Demo Student', 'Grade 10 · Frisco ISD', [
-      { name: 'English 1 Adv',         q1avg: 99, q2avg: 98, q3avg: 97, q4avg: 99 },
-      { name: 'Algebra 2 Adv',         q1avg: 95, q2avg: 94, q3avg: 93, q4avg: 96 },
-      { name: 'AP World History',       q1avg: 88, q2avg: 87, q3avg: 86, q4avg: 89 },
-      { name: 'Chemistry Adv',          q1avg: 91, q2avg: 90, q3avg: 89, q4avg: 92 },
-      { name: 'Spanish 2',              q1avg: 93, q2avg: 94, q3avg: 92, q4avg: 95 },
-      { name: 'PE Athletics',           q1avg: 97, q2avg: 97, q3avg: 96, q4avg: 98 },
-      { name: 'Computer Science Prin',  q1avg: 90, q2avg: 91, q3avg: 88, q4avg: 90 },
+  document.getElementById('btn-demo').addEventListener('click', () => {
+    showDash('Alex Rivera', 'Grade 11 · Frisco ISD', [
+      { name: 'AP Calculus AB',          q1avg: 91, q2avg: 89, q3avg: 87, q4avg: 92 },
+      { name: 'AP Computer Science A',   q1avg: 96, q2avg: 95, q3avg: 94, q4avg: 97 },
+      { name: 'AP World History',        q1avg: 85, q2avg: 84, q3avg: 83, q4avg: 86 },
+      { name: 'English 3 Adv',           q1avg: 93, q2avg: 92, q3avg: 90, q4avg: 94 },
+      { name: 'Chemistry Adv',           q1avg: 88, q2avg: 87, q3avg: 86, q4avg: 89 },
+      { name: 'Spanish 3',               q1avg: 95, q2avg: 94, q3avg: 93, q4avg: 96 },
+      { name: 'PE Athletics',            q1avg: 98, q2avg: 98, q3avg: 97, q4avg: 99 },
     ]);
-  });
-
-  function showDash(name, level, courses) {
-    document.getElementById('screen-login').classList.remove('active');
-    document.getElementById('screen-dash').classList.add('active');
-    renderDash(name, level, courses);
-  }
-
-  document.getElementById('btn-debug').addEventListener('click', () => {
-    const box = document.getElementById('debug-box');
-    const d = window._lastDebug;
-    if (!d) return;
-    if (box.style.display === 'none') {
-      box.textContent =
-        'Periods found: ' + JSON.stringify(d.allPeriods?.map(p=>p.label)) + '\n' +
-        'Quarter mapping: ' + JSON.stringify(d.quarterMap) + '\n' +
-        'Grades per quarter: ' + JSON.stringify(d.quarterCounts) + '\n' +
-        'Live classes: ' + d.liveCount;
-      box.style.display = 'block';
-    } else {
-      box.style.display = 'none';
-    }
-  });
-
-  document.getElementById('btn-logout').addEventListener('click', () => {
-    document.getElementById('screen-dash').classList.remove('active');
-    document.getElementById('screen-login').classList.add('active');
-    document.getElementById('hac-user').value = '';
-    document.getElementById('hac-pass').value = '';
-    document.getElementById('login-error').style.display = 'none';
-    courseData = [];
-    const btn = document.getElementById('btn-login');
-    btn.disabled = false;
-    btn.textContent = 'Load my grades';
   });
 </script>
 </body>
