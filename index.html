@@ -386,6 +386,7 @@
     }
     .badge-ap  { background: var(--red-dim); color: #b91c1c; }
     .badge-adv { background: var(--accent-dim); color: #2440b0; }
+    .badge-ol  { background: var(--surface-2); color: var(--ink-3); border: 1px solid var(--border-2); }
 
     .grade-chip {
       display: inline-flex;
@@ -410,6 +411,11 @@
       font-size: 13px;
       font-weight: 500;
       color: var(--ink-2);
+    }
+    .pts-max {
+      font-size: 10px;
+      color: var(--ink-4);
+      font-weight: 400;
     }
 
     /* Scale bar */
@@ -638,10 +644,10 @@
       </div>
 
       <div class="scale-bar">
-        <span class="scale-chip" style="background:#fde8e8;color:#991b1b;border-color:transparent"><strong>AP</strong> max 6.0</span>
-        <span class="scale-chip" style="background:#e8ebff;color:#2440b0;border-color:transparent"><strong>Advanced</strong> max 5.5</span>
-        <span class="scale-chip" style="background:var(--surface-2);"><strong>On-Level</strong> max 5.0</span>
-        <span class="scale-chip">Each point below 100 = −0.1</span>
+        <span class="scale-chip" style="background:#fde8e8;color:#991b1b;border-color:transparent"><strong>AP</strong> — max 6.0 pts &nbsp;(100 = 6.0, 90 = 5.0, 80 = 4.0…)</span>
+        <span class="scale-chip" style="background:#e8ebff;color:#2440b0;border-color:transparent"><strong>Advanced / Adv</strong> — max 5.5 pts</span>
+        <span class="scale-chip" style="background:var(--surface-2);"><strong>On-Level</strong> — max 5.0 pts</span>
+        <span class="scale-chip" style="color:var(--ink-3);">Every point below 100 = −0.1 GPA</span>
       </div>
     </div>
 
@@ -669,16 +675,16 @@
 
   /* ── helpers ── */
   function courseLevel(name) {
-    const n = (name || '').toLowerCase().trim();
-    if (/(?:^|\s)ap(?:\s|$)/.test(n)) return 'ap';
-    if (/\badv(anced)?\b/.test(n)) return 'adv';
-    return 'ol';
+    const n = (name || "").toLowerCase().trim();
+    if (/\bap\b/.test(n)) return "ap";
+    if (/\badv(anced)?\b/.test(n)) return "adv";
+    return "ol";
   }
   function toPoints(avg, name) {
     if (avg === null || avg === undefined || isNaN(avg)) return null;
     const level = courseLevel(name);
-    const max   = level === 'ap' ? 6.0 : level === 'adv' ? 5.5 : 5.0;
-    const r     = avg % 1 === 0.5 ? Math.ceil(avg) : Math.round(avg);
+    const max   = level === "ap" ? 6.0 : level === "adv" ? 5.5 : 5.0;
+    const r     = Math.round(avg);
     return Math.max(0, Math.round((max - (100 - r) * 0.1) * 10) / 10);
   }
   function avg2(a, b) {
@@ -716,12 +722,17 @@
   }
   function badge(name) {
     const l = courseLevel(name);
-    if (l === 'ap')  return '<span class="c-badge badge-ap">AP</span>';
-    if (l === 'adv') return '<span class="c-badge badge-adv">Adv</span>';
-    return '';
+    // Show badge + max GPA scale so user knows which scale applies
+    if (l === 'ap')  return '<span class="c-badge badge-ap" title="AP scale: max 6.0">AP · 6.0</span>';
+    if (l === 'adv') return '<span class="c-badge badge-adv" title="Advanced scale: max 5.5">Adv · 5.5</span>';
+    return '<span class="c-badge badge-ol" title="On-Level scale: max 5.0">OL · 5.0</span>';
   }
-  function ptsCell(pts) {
-    return pts !== null ? `<span class="pts-badge">${pts.toFixed(1)}</span>` : '<span class="g-null">—</span>';
+  function ptsCell(pts, name) {
+    if (pts === null) return '<span class="g-null">—</span>';
+    const level = courseLevel(name || '');
+    const max   = level === 'ap' ? '6.0' : level === 'adv' ? '5.5' : '5.0';
+    return `<span class="pts-badge">${pts.toFixed(1)}<span class="pts-max"> / ${max}</span></span>`;
+  }</span>` : '<span class="g-null">—</span>';
   }
 
   /* ── tab switching ── */
@@ -762,14 +773,14 @@
     fill('body-q1', (c) => `<tr>
       <td><span class="c-name">${c.name}${badge(c.name)}</span></td>
       <td>${chip(c.q1avg)}</td>
-      <td>${ptsCell(toPoints(c.q1avg, c.name))}</td>
+      <td>${ptsCell(toPoints(c.q1avg, c.name), c.name)}</td>
     </tr>`);
 
     // Q2
     fill('body-q2', (c) => `<tr>
       <td><span class="c-name">${c.name}${badge(c.name)}</span></td>
       <td>${chip(c.q2avg)}</td>
-      <td>${ptsCell(toPoints(c.q2avg, c.name))}</td>
+      <td>${ptsCell(toPoints(c.q2avg, c.name), c.name)}</td>
     </tr>`);
 
     // Sem 1
@@ -780,7 +791,7 @@
         <td>${chip(c.q1avg)}</td>
         <td>${chip(c.q2avg)}</td>
         <td>${chip(a)}</td>
-        <td>${ptsCell(toPoints(a, c.name))}</td>
+        <td>${ptsCell(toPoints(a, c.name), c.name)}</td>
       </tr>`;
     });
 
@@ -788,14 +799,14 @@
     fill('body-q3', (c) => `<tr>
       <td><span class="c-name">${c.name}${badge(c.name)}</span></td>
       <td>${chip(c.q3avg)}</td>
-      <td>${ptsCell(toPoints(c.q3avg, c.name))}</td>
+      <td>${ptsCell(toPoints(c.q3avg, c.name), c.name)}</td>
     </tr>`);
 
     // Q4
     fill('body-q4', (c) => `<tr>
       <td><span class="c-name">${c.name}${badge(c.name)}</span></td>
       <td>${chip(c.q4avg)}</td>
-      <td>${ptsCell(toPoints(c.q4avg, c.name))}</td>
+      <td>${ptsCell(toPoints(c.q4avg, c.name), c.name)}</td>
     </tr>`);
 
     // Sem 2
@@ -806,7 +817,7 @@
         <td>${chip(c.q3avg)}</td>
         <td>${chip(c.q4avg)}</td>
         <td>${chip(a)}</td>
-        <td>${ptsCell(toPoints(a, c.name))}</td>
+        <td>${ptsCell(toPoints(a, c.name), c.name)}</td>
       </tr>`;
     });
 
@@ -819,7 +830,7 @@
         <td>${chip(c.q2avg)}</td>
         <td>${chip(c.q3avg)}</td>
         <td>${chip(c.q4avg)}</td>
-        <td>${ptsCell(toPoints(ya, c.name))}</td>
+        <td>${ptsCell(toPoints(ya, c.name), c.name)}</td>
       </tr>`;
     });
 
