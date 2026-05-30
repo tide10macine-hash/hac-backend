@@ -732,7 +732,6 @@
     const level = courseLevel(name || '');
     const max   = level === 'ap' ? '6.0' : level === 'adv' ? '5.5' : '5.0';
     return `<span class="pts-badge">${pts.toFixed(1)}<span class="pts-max"> / ${max}</span></span>`;
-  }</span>` : '<span class="g-null">—</span>';
   }
 
   /* ── tab switching ── */
