@@ -152,37 +152,53 @@ function normKey(s) {
 function parseAllQuartersFromPage(html) {
   const $ = cheerio.load(html);
 
-  // ── Find the main grade table ──────────────────────────────────────────
-  // HAC uses a few different table IDs/classes across versions
-  let $table = $('#plnMain_dgRCDetails');
+  // ── Find the main grade table ─────────────────────────────────────────
+  // From the diagnose output we know the real table ID is plnMain_dgReportCard.
+  // Fall back through a list of known selectors for other HAC versions.
+  let $table = $('#plnMain_dgReportCard');
+  if (!$table.length) $table = $('#plnMain_dgRCDetails');
   if (!$table.length) $table = $('table.sg-asp-table').first();
   if (!$table.length) $table = $('#plnMain table').first();
   if (!$table.length) $table = $('table').first();
 
-  // ── Read header row to map column index → quarter label ───────────────
+  // ── Read header row → build colMap ───────────────────────────────────
+  // Real header (from diagnose):
+  //  col 0  Course
+  //  col 1  Description   ← actual class name lives here
+  //  col 2  Period
+  //  col 3  Teacher
+  //  col 4  Room
+  //  col 5  Att.Credit
+  //  col 6  Ern.Credit
+  //  col 7  Q1
+  //  col 8  Q2
+  //  col 9  SEM1
+  //  col 10 Q3
+  //  col 11 Q4
+  //  col 12 SEM2
+  //  col 13 FIN  ...
   const headerCells = [];
   $table.find('tr').first().find('th, td').each((i, el) => {
-    headerCells.push($(el).text().trim());
+    headerCells.push($(el).text().trim().toUpperCase());
   });
-  console.log('[RC header cells]', headerCells);
+  console.log('[RC headers]', headerCells);
 
-  // Map each header cell to q1/q2/q3/q4 (skip semester/exam/final columns)
-  // We look for cells whose text matches a quarter-like label.
-  const QUARTER_PATTERNS = [
-    { q: 'q1', tests: [ /^1$/, /quarter\s*1\b/i, /\bmp\s*1\b/i, /\b1st\b/i, /nine.?weeks.?1\b/i, /six.?weeks.?1\b/i, /^q1$/i ] },
-    { q: 'q2', tests: [ /^2$/, /quarter\s*2\b/i, /\bmp\s*2\b/i, /\b2nd\b/i, /nine.?weeks.?2\b/i, /six.?weeks.?2\b/i, /^q2$/i ] },
-    { q: 'q3', tests: [ /^3$/, /quarter\s*3\b/i, /\bmp\s*3\b/i, /\b3rd\b/i, /nine.?weeks.?3\b/i, /six.?weeks.?3\b/i, /^q3$/i ] },
-    { q: 'q4', tests: [ /^4$/, /quarter\s*4\b/i, /\bmp\s*4\b/i, /\b4th\b/i, /nine.?weeks.?4\b/i, /six.?weeks.?4\b/i, /^q4$/i ] },
-  ];
+  // Map quarter labels → column index using the real header text.
+  // We match against exact labels first, then broader patterns as fallback.
+  const QUARTER_LABELS = {
+    q1: [ /^Q1$/, /^QUARTER\s*1$/, /^MP\s*1$/, /^1$/, /NINE.?WEEKS.?1/, /SIX.?WEEKS.?1/ ],
+    q2: [ /^Q2$/, /^QUARTER\s*2$/, /^MP\s*2$/, /^2$/, /NINE.?WEEKS.?2/, /SIX.?WEEKS.?2/ ],
+    q3: [ /^Q3$/, /^QUARTER\s*3$/, /^MP\s*3$/, /^3$/, /NINE.?WEEKS.?3/, /SIX.?WEEKS.?3/ ],
+    q4: [ /^Q4$/, /^QUARTER\s*4$/, /^MP\s*4$/, /^4$/, /NINE.?WEEKS.?4/, /SIX.?WEEKS.?4/ ],
+  };
 
-  // colMap: { q1: colIndex, q2: colIndex, ... }
-  const colMap = {};
+  const colMap   = {};   // { q1: 7, q2: 8, q3: 10, q4: 11 }
   const usedCols = new Set();
 
-  for (const { q, tests } of QUARTER_PATTERNS) {
+  for (const [q, patterns] of Object.entries(QUARTER_LABELS)) {
     for (let i = 0; i < headerCells.length; i++) {
       if (usedCols.has(i)) continue;
-      if (tests.some(re => re.test(headerCells[i]))) {
+      if (patterns.some(re => re.test(headerCells[i]))) {
         colMap[q] = i;
         usedCols.add(i);
         break;
@@ -190,55 +206,69 @@ function parseAllQuartersFromPage(html) {
     }
   }
 
-  // Positional fallback: if header matching failed, try the dropdown-based
-  // mapping approach — look at the period dropdown to understand which column
-  // index corresponds to each quarter based on the currently-selected option.
-  // As a last resort, assume columns 1,2,3,4 are Q1–Q4 (skipping col 0 = name).
+  // Also note where Description (name) column is — default col 1
+  let nameCol = headerCells.indexOf('DESCRIPTION');
+  if (nameCol === -1) nameCol = 1; // safe fallback
+
+  // Positional fallback if header matching got < 2 quarters
   if (Object.keys(colMap).length < 2) {
-    console.log('[RC] header matching found < 2 quarters, trying positional fallback');
-    // Find numeric/grade-looking columns by scanning first data row
+    console.warn('[RC] < 2 quarter cols matched by header, using positional scan');
     const numericCols = [];
     $table.find('tr').each((ri, row) => {
-      if (ri === 0) return; // skip header
+      if (ri === 0) return;
       const cells = $(row).find('td');
-      if (cells.length < 2) return;
-      const rawName = $(cells[0]).text().trim();
-      if (!/^[A-Z]{2,5}[\dA-Z]{3,}/.test(rawName)) return;
-      // Found first data row — find all numeric columns
+      if (cells.length < 8) return;
+      // Look for a row that starts with a course code in col 0
+      const code = $(cells[0]).text().trim();
+      if (!/^[A-Z]{2,}[\dA-Z]{2,}/.test(code)) return;
       cells.each((ci, cell) => {
-        if (ci === 0) return;
+        if (ci < 2) return; // skip code + description cols
         const txt = $(cell).text().trim();
-        if (/^\d{2,3}(\.\d{1,2})?$/.test(txt)) {
+        if (/^\d{2,3}(\.\d+)?$/.test(txt)) {
           const n = parseFloat(txt);
           if (n >= 40 && n <= 100) numericCols.push(ci);
         }
       });
-      return false; // stop after first data row
+      return false; // only check first data row
     });
-    console.log('[RC] numeric cols in first row:', numericCols);
-    // Map first 4 numeric columns to q1–q4
+    console.log('[RC] positional numeric cols:', numericCols);
     ['q1','q2','q3','q4'].forEach((q, i) => {
-      if (!colMap[q] && numericCols[i] !== undefined) colMap[q] = numericCols[i];
+      if (colMap[q] === undefined && numericCols[i] !== undefined) {
+        colMap[q] = numericCols[i];
+      }
     });
   }
 
-  console.log('[RC colMap]', colMap);
+  console.log('[RC colMap]', colMap, '| nameCol:', nameCol);
 
-  // ── Read each data row at the mapped column indices ────────────────────
-  // result: Map< rawCourseName, { q1, q2, q3, q4 } >
+  // ── Parse every data row ──────────────────────────────────────────────
+  // result: Map< courseCode, { name, sem, q1, q2, q3, q4 } >
+  //   courseCode = col 0 text (e.g. "MTH45300A - 3")
+  //   name       = col 1 Description, stripped of trailing " S1"/" S2"
+  //   sem        = 'A' (sem1 course), 'B' (sem2 course), or null (year-long)
   const result = new Map();
 
   $table.find('tr').each((ri, row) => {
     if (ri === 0) return; // skip header
 
     const cells = $(row).find('td');
-    if (cells.length < 2) return;
+    if (cells.length < 8) return;
 
-    const rawName = $(cells[0]).text().trim();
-    if (!rawName || rawName.length < 4) return;
-    if (!/^[A-Z]{2,5}[\dA-Z]{3,}/.test(rawName)) return;
+    const courseCode = $(cells[0]).text().trim();
+    if (!courseCode || !/^[A-Z]{2,}[\dA-Z]{2,}/.test(courseCode)) return;
 
-    const entry = { q1: null, q2: null, q3: null, q4: null };
+    // ── Real class name from Description column ──────────────────────
+    let displayName = $(cells[nameCol]).text().trim();
+    // Strip trailing " S1" or " S2"
+    displayName = displayName.replace(/\s+S[12]\s*$/i, '').trim();
+    if (!displayName) displayName = cleanName(courseCode); // last resort
+
+    // ── Semester from course code suffix (A = sem1, B = sem2) ────────
+    const semMatch = courseCode.match(/^[A-Z]{2,}[\dA-Z]*?([AB])\s*[-\s]/i);
+    const sem = semMatch ? semMatch[1].toUpperCase() : null;
+
+    // ── Read grade columns ────────────────────────────────────────────
+    const entry = { name: displayName, sem, q1: null, q2: null, q3: null, q4: null };
 
     for (const [q, colIdx] of Object.entries(colMap)) {
       const cell = cells[colIdx];
@@ -250,20 +280,19 @@ function parseAllQuartersFromPage(html) {
       }
     }
 
-    // Only add if at least one grade was found
-    if (Object.values(entry).some(v => v !== null)) {
-      result.set(rawName, entry);
+    if (Object.values(entry).some((v, k) => k !== 'name' && k !== 'sem' && v !== null)) {
+      result.set(courseCode, entry);
     }
   });
 
-  console.log('[RC parseAll]', result.size, 'rows,', 
+  console.log('[RC parseAll]', result.size, 'rows |',
     'q1:', [...result.values()].filter(r => r.q1 !== null).length,
     'q2:', [...result.values()].filter(r => r.q2 !== null).length,
     'q3:', [...result.values()].filter(r => r.q3 !== null).length,
-    'q4:', [...result.values()].filter(r => r.q4 !== null).length
+    'q4:', [...result.values()].filter(r => r.q4 !== null).length,
   );
 
-  return result;
+  return result; // Map<courseCode, { name, sem, q1, q2, q3, q4 }>
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -361,54 +390,49 @@ app.post('/api/grades', async (req, res) => {
     // ── 4. Merge A/B course pairs into unified rows ───────────────────────
     //
     // HAC splits each course into two rows:
-    //   ELA12200A → English 2 Adv (holds Q1 & Q2, Q3/Q4 are blank)
-    //   ELA12200B → English 2 Adv (holds Q3 & Q4, Q1/Q2 are blank)
+    //   ELA12200A → "English 2 Adv" with Q1 & Q2 grades (Q3/Q4 blank)
+    //   ELA12200B → "English 2 Adv" with Q3 & Q4 grades (Q1/Q2 blank)
     //
-    // We merge both using the cleaned course name as the key.
+    // rcRows now carries { name, sem, q1, q2, q3, q4 } where:
+    //   name = already-clean Description column value (e.g. "English 2 Adv")
+    //   sem  = 'A' (sem1), 'B' (sem2), or null (year-long)
     //
-    function liveFor(rawName) {
-      if (liveGrades.has(rawName)) return liveGrades.get(rawName);
-      const target = normKey(cleanName(rawName));
+    function liveFor(displayName) {
+      const target = normKey(displayName);
       for (const [k, v] of liveGrades) {
-        if (normKey(cleanName(k)) === target) return v;
+        if (normKey(cleanName(k)) === target || normKey(k) === target) return v;
       }
       return null;
     }
 
     const merged = new Map(); // baseKey → { name, q1, q2, q3, q4 }
 
-    rcRows.forEach(({ q1, q2, q3, q4 }, rawName) => {
-      const cleaned = cleanName(rawName);
-      if (!cleaned || cleaned.length < 2) return;
+    rcRows.forEach(({ name, sem, q1, q2, q3, q4 }) => {
+      if (!name || name.length < 2) return;
 
-      const sem = courseSemester(rawName); // 'A', 'B', or null
-      const key = courseBaseKey(cleaned);
+      const key = courseBaseKey(name); // already clean — no need to re-clean
 
       if (!merged.has(key)) {
-        merged.set(key, { name: cleaned, q1: null, q2: null, q3: null, q4: null });
+        merged.set(key, { name, q1: null, q2: null, q3: null, q4: null });
       }
       const entry = merged.get(key);
 
-      // Prefer longer display name
-      if (cleaned.length > entry.name.length) entry.name = cleaned;
-
       if (sem === 'A') {
-        // Semester 1 course: takes Q1 and Q2
+        // Semester 1 course: contributes Q1 and Q2
         if (q1 !== null) entry.q1 = q1;
         if (q2 !== null) entry.q2 = q2;
       } else if (sem === 'B') {
-        // Semester 2 course: takes Q3 and Q4
+        // Semester 2 course: contributes Q3 and Q4
         if (q3 !== null) entry.q3 = q3;
         if (q4 !== null) entry.q4 = q4;
-        // Fall back to live grade for Q4 if report card doesn't have it yet
-        if (entry.q4 === null) entry.q4 = liveFor(rawName);
+        if (entry.q4 === null) entry.q4 = liveFor(name);
       } else {
-        // Year-long course: take whatever columns have data
+        // Year-long: take whatever is populated
         if (q1 !== null) entry.q1 = q1;
         if (q2 !== null) entry.q2 = q2;
         if (q3 !== null) entry.q3 = q3;
         if (q4 !== null) entry.q4 = q4;
-        if (entry.q4 === null) entry.q4 = liveFor(rawName);
+        if (entry.q4 === null) entry.q4 = liveFor(name);
       }
     });
 
