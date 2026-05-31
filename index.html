@@ -9,497 +9,155 @@
   <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=DM+Mono:wght@400;500&family=Instrument+Sans:wght@400;500;600&display=swap" rel="stylesheet" />
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
     :root {
-      --ink:       #0d0f12;
-      --ink-2:     #3a3d44;
-      --ink-3:     #787e8c;
-      --ink-4:     #adb3bf;
-      --bg:        #f0f1f5;
-      --surface:   #ffffff;
-      --surface-2: #f7f8fa;
-      --border:    rgba(13,15,18,0.08);
-      --border-2:  rgba(13,15,18,0.14);
-      --accent:    #3d5aff;
-      --accent-dim:#e8ebff;
-      --accent-dk: #2640d4;
-      --green:     #18b97a;
-      --green-dim: #e0f7ee;
-      --red:       #e84040;
-      --red-dim:   #fdeaea;
-      --yellow:    #f0a832;
-      --yellow-dim:#fff3dc;
-      --r:         8px;
-      --r-lg:      14px;
-      --r-xl:      20px;
+      --ink:#0d0f12; --ink-2:#3a3d44; --ink-3:#787e8c; --ink-4:#adb3bf;
+      --bg:#f0f1f5; --surface:#ffffff; --surface-2:#f7f8fa;
+      --border:rgba(13,15,18,0.08); --border-2:rgba(13,15,18,0.14);
+      --accent:#3d5aff; --accent-dim:#e8ebff; --accent-dk:#2640d4;
+      --green:#18b97a; --green-dim:#e0f7ee;
+      --red:#e84040; --red-dim:#fdeaea;
+      --yellow:#f0a832; --yellow-dim:#fff3dc;
+      --r:8px; --r-lg:14px; --r-xl:20px;
     }
+    body { font-family:'Instrument Sans',sans-serif; background:var(--bg); color:var(--ink); min-height:100vh; }
 
-    body {
-      font-family: 'Instrument Sans', sans-serif;
-      background: var(--bg);
-      color: var(--ink);
-      min-height: 100vh;
-    }
-
-    /* ── SPLASH / LOGIN ──────────────────────────────────────── */
+    /* ── LOGIN ── */
     #screen-login {
-      min-height: 100vh;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 2rem 1rem;
-      background:
-        radial-gradient(ellipse 80% 50% at 110% 0%, rgba(61,90,255,0.12) 0%, transparent 60%),
-        radial-gradient(ellipse 60% 40% at -10% 100%, rgba(24,185,122,0.1) 0%, transparent 55%),
-        var(--bg);
+      min-height:100vh; display:flex; align-items:center; justify-content:center; padding:2rem 1rem;
+      background: radial-gradient(ellipse 80% 50% at 110% 0%,rgba(61,90,255,.12) 0%,transparent 60%),
+                  radial-gradient(ellipse 60% 40% at -10% 100%,rgba(24,185,122,.1) 0%,transparent 55%),var(--bg);
     }
-    #screen-login.hidden { display: none; }
+    #screen-login.hidden { display:none; }
+    .login-wrap { width:100%; max-width:420px; }
+    .brand { display:flex; align-items:center; gap:10px; margin-bottom:2rem; }
+    .brand-mark { width:36px; height:36px; background:var(--ink); border-radius:10px; display:flex; align-items:center; justify-content:center; }
+    .brand-mark svg { color:#fff; }
+    .brand-name { font-family:'Syne',sans-serif; font-weight:800; font-size:20px; letter-spacing:-.02em; }
+    .brand-sub { font-size:11px; color:var(--ink-3); letter-spacing:.05em; text-transform:uppercase; margin-left:auto; }
+    .login-card { background:var(--surface); border:1px solid var(--border-2); border-radius:var(--r-xl); padding:2rem; box-shadow:0 4px 40px rgba(13,15,18,.08); }
+    .login-card h1 { font-family:'Syne',sans-serif; font-weight:700; font-size:26px; letter-spacing:-.03em; line-height:1.1; margin-bottom:.4rem; }
+    .login-card h1 em { font-style:normal; color:var(--accent); }
+    .login-sub { font-size:13.5px; color:var(--ink-3); line-height:1.6; margin-bottom:1.5rem; }
+    .privacy-note { display:flex; gap:9px; background:var(--yellow-dim); border:1px solid rgba(240,168,50,.3); border-radius:var(--r); padding:10px 12px; font-size:12px; color:#7a4b00; line-height:1.5; margin-bottom:1.5rem; }
+    .privacy-note svg { flex-shrink:0; margin-top:1px; color:var(--yellow); }
+    .field { margin-bottom:1rem; }
+    .field label { display:block; font-size:11.5px; font-weight:600; letter-spacing:.06em; text-transform:uppercase; color:var(--ink-3); margin-bottom:6px; }
+    .field input { width:100%; font-family:'Instrument Sans',sans-serif; font-size:15px; padding:11px 14px; border:1.5px solid var(--border-2); border-radius:var(--r); background:var(--surface); color:var(--ink); transition:border-color .15s,box-shadow .15s; outline:none; }
+    .field input:focus { border-color:var(--accent); box-shadow:0 0 0 3px rgba(61,90,255,.12); }
+    .btn-primary { width:100%; font-family:'Instrument Sans',sans-serif; font-size:15px; font-weight:600; padding:12px; background:var(--ink); color:#fff; border:none; border-radius:var(--r); cursor:pointer; margin-top:.5rem; transition:background .15s,transform .1s,opacity .15s; }
+    .btn-primary:hover { background:var(--ink-2); }
+    .btn-primary:active { transform:scale(.99); }
+    .btn-primary:disabled { opacity:.45; cursor:not-allowed; transform:none; }
+    .login-footer { display:flex; align-items:center; justify-content:space-between; margin-top:1.1rem; }
+    .login-footer .err { display:none; align-items:center; gap:6px; font-size:12.5px; color:var(--red); }
+    .login-footer .err.show { display:flex; }
+    .demo-btn { font-size:13px; color:var(--accent); background:none; border:none; cursor:pointer; font-family:inherit; font-weight:500; margin-left:auto; }
+    .demo-btn:hover { text-decoration:underline; }
+    .spin { display:inline-block; width:16px; height:16px; border:2px solid rgba(255,255,255,.35); border-top-color:#fff; border-radius:50%; animation:spin .65s linear infinite; vertical-align:middle; margin-right:7px; }
+    @keyframes spin { to { transform:rotate(360deg); } }
 
-    .login-wrap {
-      width: 100%;
-      max-width: 420px;
-    }
+    /* ── DASHBOARD SHELL ── */
+    #screen-dash { display:none; }
+    #screen-dash.active { display:block; }
+    .topbar { background:var(--ink); padding:0 1.5rem; display:flex; align-items:center; gap:.5rem; height:56px; }
+    .topbar-brand { font-family:'Syne',sans-serif; font-weight:800; font-size:17px; letter-spacing:-.02em; color:#fff; flex-shrink:0; }
+    .topbar-student { font-size:13px; color:rgba(255,255,255,.45); margin-left:6px; flex-shrink:0; }
+    .topbar-student span { color:rgba(255,255,255,.8); }
+    .topbar-nav { display:flex; gap:2px; margin-left:1.5rem; }
+    .tnav-btn { font-family:'Instrument Sans',sans-serif; font-size:13px; font-weight:500; padding:6px 14px; border:none; border-radius:6px; background:transparent; color:rgba(255,255,255,.45); cursor:pointer; transition:all .15s; }
+    .tnav-btn:hover { color:rgba(255,255,255,.85); background:rgba(255,255,255,.08); }
+    .tnav-btn.active { background:rgba(255,255,255,.14); color:#fff; font-weight:600; }
+    .btn-out { margin-left:auto; font-family:'Instrument Sans',sans-serif; font-size:12px; font-weight:500; padding:6px 12px; border:1px solid rgba(255,255,255,.2); border-radius:6px; background:transparent; color:rgba(255,255,255,.6); cursor:pointer; transition:all .15s; flex-shrink:0; }
+    .btn-out:hover { background:rgba(255,255,255,.08); color:#fff; }
+    .dash-body { max-width:860px; margin:0 auto; padding:2rem 1.25rem 5rem; }
 
-    .brand {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      margin-bottom: 2rem;
-    }
-    .brand-mark {
-      width: 36px; height: 36px;
-      background: var(--ink);
-      border-radius: 10px;
-      display: flex; align-items: center; justify-content: center;
-    }
-    .brand-mark svg { color: #fff; }
-    .brand-name {
-      font-family: 'Syne', sans-serif;
-      font-weight: 800;
-      font-size: 20px;
-      letter-spacing: -0.02em;
-      color: var(--ink);
-    }
-    .brand-sub {
-      font-size: 11px;
-      color: var(--ink-3);
-      letter-spacing: 0.05em;
-      text-transform: uppercase;
-      margin-left: auto;
-    }
+    /* ── GPA TILES ── */
+    .gpa-strip { display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px; margin-bottom:1.75rem; }
+    .gpa-tile { background:var(--surface); border:1px solid var(--border); border-radius:var(--r-lg); padding:1.1rem 1.25rem; position:relative; overflow:hidden; }
+    .gpa-tile.primary { background:var(--ink); border-color:transparent; }
+    .gpa-tile.primary::after { content:''; position:absolute; inset:0; background:radial-gradient(ellipse 80% 60% at 100% 0%,rgba(61,90,255,.4) 0%,transparent 65%); pointer-events:none; }
+    .gpa-tile-label { font-size:10.5px; font-weight:600; letter-spacing:.09em; text-transform:uppercase; color:var(--ink-3); margin-bottom:6px; }
+    .gpa-tile.primary .gpa-tile-label { color:rgba(255,255,255,.45); }
+    .gpa-tile-val { font-family:'DM Mono',monospace; font-size:34px; font-weight:500; color:var(--ink); line-height:1; }
+    .gpa-tile.primary .gpa-tile-val { color:#fff; }
+    .gpa-tile-sub { font-size:11px; color:var(--ink-4); margin-top:4px; }
+    .gpa-tile.primary .gpa-tile-sub { color:rgba(255,255,255,.35); }
 
-    .login-card {
-      background: var(--surface);
-      border: 1px solid var(--border-2);
-      border-radius: var(--r-xl);
-      padding: 2rem;
-      box-shadow: 0 4px 40px rgba(13,15,18,0.08);
-    }
+    /* ── QUARTER TABS ── */
+    .tab-section { background:var(--surface); border:1px solid var(--border); border-radius:var(--r-lg); overflow:hidden; margin-bottom:1.5rem; }
+    .tab-header { display:flex; align-items:center; border-bottom:1px solid var(--border); padding:0 4px; gap:2px; background:var(--surface-2); overflow-x:auto; }
+    .tab-btn { font-family:'Instrument Sans',sans-serif; font-size:13px; font-weight:500; padding:11px 16px; border:none; background:transparent; color:var(--ink-3); cursor:pointer; border-bottom:2px solid transparent; margin-bottom:-1px; transition:color .15s; white-space:nowrap; }
+    .tab-btn:hover { color:var(--ink); }
+    .tab-btn.active { color:var(--accent); border-bottom-color:var(--accent); font-weight:600; }
+    .tab-pane { display:none; }
+    .tab-pane.active { display:block; }
 
-    .login-card h1 {
-      font-family: 'Syne', sans-serif;
-      font-weight: 700;
-      font-size: 26px;
-      letter-spacing: -0.03em;
-      line-height: 1.1;
-      margin-bottom: 0.4rem;
-    }
-    .login-card h1 em { font-style: normal; color: var(--accent); }
+    /* ── COURSE TABLE ── */
+    .course-table { width:100%; border-collapse:collapse; }
+    .course-table th { text-align:left; font-size:10.5px; font-weight:600; letter-spacing:.07em; text-transform:uppercase; color:var(--ink-4); padding:10px 16px; border-bottom:1px solid var(--border); white-space:nowrap; background:var(--surface-2); }
+    .course-table td { padding:12px 16px; font-size:13.5px; vertical-align:middle; border-bottom:1px solid var(--border); }
+    .course-table tbody tr:last-child td { border-bottom:none; }
+    .course-table tbody tr:hover td { background:var(--surface-2); }
+    .c-name { font-weight:500; font-size:14px; color:var(--ink); }
+    .c-badge { display:inline-block; font-size:9.5px; font-weight:700; letter-spacing:.05em; padding:2px 6px; border-radius:4px; margin-left:6px; vertical-align:middle; }
+    .badge-ap  { background:var(--red-dim); color:#b91c1c; }
+    .badge-adv { background:var(--accent-dim); color:#2440b0; }
+    .badge-ol  { background:var(--surface-2); color:var(--ink-3); border:1px solid var(--border-2); }
+    .grade-chip { display:inline-flex; align-items:center; justify-content:center; font-family:'DM Mono',monospace; font-size:13px; font-weight:500; padding:4px 11px; border-radius:6px; min-width:52px; }
+    .ga { background:var(--green-dim); color:#0e7a4f; }
+    .gb { background:var(--accent-dim); color:#2440b0; }
+    .gc { background:var(--yellow-dim); color:#8a4c00; }
+    .gd { background:var(--red-dim); color:#b91c1c; }
+    .gf { background:#fee2e2; color:#7f1d1d; }
+    .g-null { color:var(--ink-4); font-size:12px; }
+    .pts-badge { font-family:'DM Mono',monospace; font-size:13px; font-weight:500; color:var(--ink-2); }
+    .pts-max { font-size:10px; color:var(--ink-4); font-weight:400; }
+    .scale-bar { display:flex; gap:8px; flex-wrap:wrap; padding:12px 16px; border-top:1px solid var(--border); background:var(--surface-2); }
+    .scale-chip { font-size:11.5px; padding:3px 10px; border-radius:5px; font-weight:500; border:1px solid var(--border-2); background:var(--surface); color:var(--ink-2); }
 
-    .login-sub {
-      font-size: 13.5px;
-      color: var(--ink-3);
-      line-height: 1.6;
-      margin-bottom: 1.5rem;
-    }
+    /* ── WHAT-IF ── */
+    .whatif-card { background:var(--surface); border:1px solid var(--border); border-radius:var(--r-lg); padding:1.25rem 1.5rem; margin-bottom:1.5rem; }
+    .whatif-card h3 { font-family:'Syne',sans-serif; font-size:15px; font-weight:700; margin-bottom:3px; }
+    .whatif-desc { font-size:12.5px; color:var(--ink-3); margin-bottom:1rem; }
+    .wi-row { display:flex; gap:10px; flex-wrap:wrap; }
+    .wi-row select, .wi-row input { font-family:'Instrument Sans',sans-serif; font-size:14px; padding:9px 12px; border:1.5px solid var(--border-2); border-radius:var(--r); background:var(--surface); color:var(--ink); outline:none; transition:border-color .15s; }
+    .wi-row select:focus, .wi-row input:focus { border-color:var(--accent); box-shadow:0 0 0 3px rgba(61,90,255,.1); }
+    .wi-row select { flex:2; min-width:200px; }
+    .wi-row input  { flex:1; min-width:120px; }
+    .wi-result { margin-top:10px; font-size:13.5px; color:var(--ink-3); min-height:20px; }
+    .wi-result .hi { font-weight:600; color:var(--green); font-family:'DM Mono',monospace; }
+    .wi-result .diff { font-size:12px; color:var(--ink-4); margin-left:6px; }
 
-    .privacy-note {
-      display: flex;
-      gap: 9px;
-      background: var(--yellow-dim);
-      border: 1px solid rgba(240,168,50,0.3);
-      border-radius: var(--r);
-      padding: 10px 12px;
-      font-size: 12px;
-      color: #7a4b00;
-      line-height: 1.5;
-      margin-bottom: 1.5rem;
-    }
-    .privacy-note svg { flex-shrink: 0; margin-top: 1px; color: var(--yellow); }
+    /* ── TRANSCRIPT ── */
+    .tr-year-block { background:var(--surface); border:1px solid var(--border); border-radius:var(--r-lg); margin-bottom:1.25rem; overflow:hidden; }
+    .tr-year-header { display:flex; align-items:center; gap:12px; padding:14px 18px; cursor:pointer; user-select:none; border-bottom:1px solid transparent; transition:background .12s; flex-wrap:wrap; }
+    .tr-year-header:hover { background:var(--surface-2); }
+    .tr-year-block.open .tr-year-header { border-bottom-color:var(--border); }
+    .tr-year-badge { font-family:'Syne',sans-serif; font-weight:700; font-size:15px; color:var(--ink); }
+    .tr-grade-badge { font-size:11px; font-weight:600; padding:3px 9px; background:var(--accent-dim); color:var(--accent); border-radius:5px; }
+    .tr-building { font-size:12px; color:var(--ink-3); }
+    .tr-credit { margin-left:auto; font-family:'DM Mono',monospace; font-size:12px; color:var(--ink-3); }
+    .tr-chevron { color:var(--ink-4); transition:transform .2s; font-size:11px; }
+    .tr-year-block.open .tr-chevron { transform:rotate(180deg); }
+    .tr-year-body { display:none; }
+    .tr-year-block.open .tr-year-body { display:block; }
+    .tr-table { width:100%; border-collapse:collapse; }
+    .tr-table th { text-align:left; font-size:10.5px; font-weight:600; letter-spacing:.07em; text-transform:uppercase; color:var(--ink-4); padding:9px 16px; border-bottom:1px solid var(--border); background:var(--surface-2); white-space:nowrap; }
+    .tr-table td { padding:11px 16px; font-size:13.5px; border-bottom:1px solid var(--border); }
+    .tr-table tbody tr:last-child td { border-bottom:none; }
+    .tr-table tbody tr:hover td { background:var(--surface-2); }
+    .tr-course-name { font-weight:500; }
+    .sk-spin { display:inline-block; width:15px; height:15px; border:2px solid rgba(61,90,255,.2); border-top-color:var(--accent); border-radius:50%; animation:spin .7s linear infinite; vertical-align:middle; margin-right:7px; }
+    .tr-loading { padding:2.5rem; text-align:center; color:var(--ink-4); font-size:13.5px; }
 
-    .field { margin-bottom: 1rem; }
-    .field label {
-      display: block;
-      font-size: 11.5px;
-      font-weight: 600;
-      letter-spacing: 0.06em;
-      text-transform: uppercase;
-      color: var(--ink-3);
-      margin-bottom: 6px;
-    }
-    .field input {
-      width: 100%;
-      font-family: 'Instrument Sans', sans-serif;
-      font-size: 15px;
-      padding: 11px 14px;
-      border: 1.5px solid var(--border-2);
-      border-radius: var(--r);
-      background: var(--surface);
-      color: var(--ink);
-      transition: border-color 0.15s, box-shadow 0.15s;
-      outline: none;
-    }
-    .field input:focus {
-      border-color: var(--accent);
-      box-shadow: 0 0 0 3px rgba(61,90,255,0.12);
-    }
+    .footer-note { font-size:11.5px; color:var(--ink-4); text-align:center; line-height:1.8; }
 
-    .btn-primary {
-      width: 100%;
-      font-family: 'Instrument Sans', sans-serif;
-      font-size: 15px;
-      font-weight: 600;
-      padding: 12px;
-      background: var(--ink);
-      color: #fff;
-      border: none;
-      border-radius: var(--r);
-      cursor: pointer;
-      margin-top: 0.5rem;
-      transition: background 0.15s, transform 0.1s, opacity 0.15s;
-    }
-    .btn-primary:hover { background: var(--ink-2); }
-    .btn-primary:active { transform: scale(0.99); }
-    .btn-primary:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
-
-    .login-footer {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      margin-top: 1.1rem;
-    }
-    .login-footer .err {
-      display: none;
-      align-items: center;
-      gap: 6px;
-      font-size: 12.5px;
-      color: var(--red);
-    }
-    .login-footer .err.show { display: flex; }
-    .demo-btn {
-      font-size: 13px;
-      color: var(--accent);
-      background: none;
-      border: none;
-      cursor: pointer;
-      font-family: inherit;
-      font-weight: 500;
-      margin-left: auto;
-    }
-    .demo-btn:hover { text-decoration: underline; }
-
-    .spin {
-      display: inline-block; width: 16px; height: 16px;
-      border: 2px solid rgba(255,255,255,0.35); border-top-color: #fff;
-      border-radius: 50%; animation: spin 0.65s linear infinite;
-      vertical-align: middle; margin-right: 7px;
-    }
-    @keyframes spin { to { transform: rotate(360deg); } }
-
-    /* ── DASHBOARD ───────────────────────────────────────────── */
-    #screen-dash { display: none; }
-    #screen-dash.active { display: block; }
-
-    .topbar {
-      background: var(--ink);
-      padding: 0 1.5rem;
-      display: flex;
-      align-items: center;
-      gap: 1rem;
-      height: 56px;
-    }
-    .topbar-brand {
-      font-family: 'Syne', sans-serif;
-      font-weight: 800;
-      font-size: 17px;
-      letter-spacing: -0.02em;
-      color: #fff;
-    }
-    .topbar-student {
-      font-size: 13px;
-      color: rgba(255,255,255,0.45);
-      margin-left: 4px;
-    }
-    .topbar-student span { color: rgba(255,255,255,0.8); }
-    .btn-out {
-      margin-left: auto;
-      font-family: 'Instrument Sans', sans-serif;
-      font-size: 12px;
-      font-weight: 500;
-      padding: 6px 12px;
-      border: 1px solid rgba(255,255,255,0.2);
-      border-radius: 6px;
-      background: transparent;
-      color: rgba(255,255,255,0.6);
-      cursor: pointer;
-      transition: all 0.15s;
-    }
-    .btn-out:hover { background: rgba(255,255,255,0.08); color: #fff; }
-
-    .dash-body {
-      max-width: 860px;
-      margin: 0 auto;
-      padding: 2rem 1.25rem 5rem;
-    }
-
-    /* GPA summary strip */
-    .gpa-strip {
-      display: grid;
-      grid-template-columns: 1fr 1fr 1fr;
-      gap: 10px;
-      margin-bottom: 1.75rem;
-    }
-    .gpa-tile {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: var(--r-lg);
-      padding: 1.1rem 1.25rem;
-      position: relative;
-      overflow: hidden;
-    }
-    .gpa-tile.primary {
-      background: var(--ink);
-      border-color: transparent;
-    }
-    .gpa-tile.primary::after {
-      content: '';
-      position: absolute;
-      inset: 0;
-      background: radial-gradient(ellipse 80% 60% at 100% 0%, rgba(61,90,255,0.4) 0%, transparent 65%);
-      pointer-events: none;
-    }
-    .gpa-tile-label {
-      font-size: 10.5px;
-      font-weight: 600;
-      letter-spacing: 0.09em;
-      text-transform: uppercase;
-      color: var(--ink-3);
-      margin-bottom: 6px;
-    }
-    .gpa-tile.primary .gpa-tile-label { color: rgba(255,255,255,0.45); }
-    .gpa-tile-val {
-      font-family: 'DM Mono', monospace;
-      font-size: 34px;
-      font-weight: 500;
-      color: var(--ink);
-      line-height: 1;
-    }
-    .gpa-tile.primary .gpa-tile-val { color: #fff; }
-    .gpa-tile-sub {
-      font-size: 11px;
-      color: var(--ink-4);
-      margin-top: 4px;
-    }
-    .gpa-tile.primary .gpa-tile-sub { color: rgba(255,255,255,0.35); }
-
-    /* Quarter tab bar */
-    .tab-section {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: var(--r-lg);
-      overflow: hidden;
-      margin-bottom: 1.5rem;
-    }
-
-    .tab-header {
-      display: flex;
-      align-items: center;
-      border-bottom: 1px solid var(--border);
-      padding: 0 4px;
-      gap: 2px;
-      background: var(--surface-2);
-    }
-    .tab-btn {
-      font-family: 'Instrument Sans', sans-serif;
-      font-size: 13px;
-      font-weight: 500;
-      padding: 11px 18px;
-      border: none;
-      background: transparent;
-      color: var(--ink-3);
-      cursor: pointer;
-      border-bottom: 2px solid transparent;
-      margin-bottom: -1px;
-      transition: color 0.15s;
-      white-space: nowrap;
-    }
-    .tab-btn:hover { color: var(--ink); }
-    .tab-btn.active {
-      color: var(--accent);
-      border-bottom-color: var(--accent);
-      font-weight: 600;
-    }
-
-    .tab-pane { display: none; }
-    .tab-pane.active { display: block; }
-
-    /* Course table */
-    .course-table {
-      width: 100%;
-      border-collapse: collapse;
-    }
-    .course-table th {
-      text-align: left;
-      font-size: 10.5px;
-      font-weight: 600;
-      letter-spacing: 0.07em;
-      text-transform: uppercase;
-      color: var(--ink-4);
-      padding: 10px 16px;
-      border-bottom: 1px solid var(--border);
-      white-space: nowrap;
-      background: var(--surface-2);
-    }
-    .course-table td {
-      padding: 12px 16px;
-      font-size: 13.5px;
-      vertical-align: middle;
-      border-bottom: 1px solid var(--border);
-    }
-    .course-table tbody tr:last-child td { border-bottom: none; }
-    .course-table tbody tr:hover td { background: var(--surface-2); }
-
-    .c-name {
-      font-weight: 500;
-      font-size: 14px;
-      color: var(--ink);
-    }
-    .c-badge {
-      display: inline-block;
-      font-size: 9.5px;
-      font-weight: 700;
-      letter-spacing: 0.05em;
-      padding: 2px 6px;
-      border-radius: 4px;
-      margin-left: 6px;
-      vertical-align: middle;
-    }
-    .badge-ap  { background: var(--red-dim); color: #b91c1c; }
-    .badge-adv { background: var(--accent-dim); color: #2440b0; }
-    .badge-ol  { background: var(--surface-2); color: var(--ink-3); border: 1px solid var(--border-2); }
-
-    .grade-chip {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      font-family: 'DM Mono', monospace;
-      font-size: 13px;
-      font-weight: 500;
-      padding: 4px 11px;
-      border-radius: 6px;
-      min-width: 52px;
-    }
-    .ga { background: var(--green-dim); color: #0e7a4f; }
-    .gb { background: var(--accent-dim); color: #2440b0; }
-    .gc { background: var(--yellow-dim); color: #8a4c00; }
-    .gd { background: var(--red-dim); color: #b91c1c; }
-    .gf { background: #fee2e2; color: #7f1d1d; }
-    .g-null { color: var(--ink-4); font-size: 12px; }
-
-    .pts-badge {
-      font-family: 'DM Mono', monospace;
-      font-size: 13px;
-      font-weight: 500;
-      color: var(--ink-2);
-    }
-    .pts-max {
-      font-size: 10px;
-      color: var(--ink-4);
-      font-weight: 400;
-    }
-
-    /* Scale bar */
-    .scale-bar {
-      display: flex;
-      gap: 8px;
-      flex-wrap: wrap;
-      padding: 12px 16px;
-      border-top: 1px solid var(--border);
-      background: var(--surface-2);
-    }
-    .scale-chip {
-      font-size: 11.5px;
-      padding: 3px 10px;
-      border-radius: 5px;
-      font-weight: 500;
-      border: 1px solid var(--border-2);
-      background: var(--surface);
-      color: var(--ink-2);
-    }
-
-    /* What-if panel */
-    .whatif-card {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: var(--r-lg);
-      padding: 1.25rem 1.5rem;
-      margin-bottom: 1.5rem;
-    }
-    .whatif-card h3 {
-      font-family: 'Syne', sans-serif;
-      font-size: 15px;
-      font-weight: 700;
-      margin-bottom: 3px;
-    }
-    .whatif-desc { font-size: 12.5px; color: var(--ink-3); margin-bottom: 1rem; }
-    .wi-row { display: flex; gap: 10px; flex-wrap: wrap; }
-    .wi-row select, .wi-row input {
-      font-family: 'Instrument Sans', sans-serif;
-      font-size: 14px;
-      padding: 9px 12px;
-      border: 1.5px solid var(--border-2);
-      border-radius: var(--r);
-      background: var(--surface);
-      color: var(--ink);
-      outline: none;
-      transition: border-color 0.15s;
-    }
-    .wi-row select:focus, .wi-row input:focus {
-      border-color: var(--accent);
-      box-shadow: 0 0 0 3px rgba(61,90,255,0.1);
-    }
-    .wi-row select { flex: 2; min-width: 200px; }
-    .wi-row input  { flex: 1; min-width: 120px; }
-    .wi-result { margin-top: 10px; font-size: 13.5px; color: var(--ink-3); min-height: 20px; }
-    .wi-result .hi { font-weight: 600; color: var(--green); font-family: 'DM Mono', monospace; }
-    .wi-result .diff { font-size: 12px; color: var(--ink-4); margin-left: 6px; }
-
-    .footer-note {
-      font-size: 11.5px;
-      color: var(--ink-4);
-      text-align: center;
-      line-height: 1.8;
-    }
-
-    /* Loading skeleton */
-    .skeleton-row td {
-      padding: 2.5rem;
-      text-align: center;
-      color: var(--ink-4);
-      font-size: 13.5px;
-    }
-    .sk-spin {
-      display: inline-block; width: 15px; height: 15px;
-      border: 2px solid rgba(61,90,255,0.2); border-top-color: var(--accent);
-      border-radius: 50%; animation: spin 0.7s linear infinite;
-      vertical-align: middle; margin-right: 7px;
-    }
-
-    @media (max-width: 560px) {
-      .gpa-strip { grid-template-columns: 1fr 1fr; }
-      .gpa-tile.primary { grid-column: span 2; }
-      .gpa-tile-val { font-size: 28px; }
-      .tab-btn { padding: 10px 12px; font-size: 12px; }
+    @media (max-width:560px) {
+      .gpa-strip { grid-template-columns:1fr 1fr; }
+      .gpa-tile.primary { grid-column:span 2; }
+      .gpa-tile-val { font-size:28px; }
+      .tab-btn { padding:10px 12px; font-size:12px; }
+      .topbar-student { display:none; }
     }
   </style>
 </head>
@@ -515,16 +173,13 @@
       <span class="brand-name">GradeFlow</span>
       <span class="brand-sub">Frisco ISD</span>
     </div>
-
     <div class="login-card">
       <h1>Check your <em>GPA</em></h1>
       <p class="login-sub">Sign in with your HAC credentials. Grades are pulled live from hac.friscoisd.org and your password is never stored.</p>
-
       <div class="privacy-note">
         <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/></svg>
         <span>Credentials sent <strong>directly to HAC</strong> — never logged or stored. Not affiliated with Frisco ISD.</span>
       </div>
-
       <div class="field">
         <label for="hac-user">Student ID</label>
         <input type="text" id="hac-user" placeholder="e.g. 123456" autocomplete="username" />
@@ -533,9 +188,7 @@
         <label for="hac-pass">Password</label>
         <input type="password" id="hac-pass" placeholder="Your FISD password" autocomplete="current-password" />
       </div>
-
       <button class="btn-primary" id="btn-login">Load my grades</button>
-
       <div class="login-footer">
         <div class="err" id="login-err">
           <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
@@ -552,138 +205,143 @@
   <div class="topbar">
     <div class="topbar-brand">GradeFlow</div>
     <div class="topbar-student">for <span id="student-name-top">—</span></div>
+    <div class="topbar-nav">
+      <button class="tnav-btn active" id="tnav-grades" onclick="showSection('grades')">Grades</button>
+      <button class="tnav-btn" id="tnav-transcript" onclick="showSection('transcript')">Transcript</button>
+    </div>
     <button class="btn-out" id="btn-logout">Sign out</button>
   </div>
 
-  <div class="dash-body">
-    <!-- GPA tiles -->
-    <div class="gpa-strip">
-      <div class="gpa-tile primary">
-        <div class="gpa-tile-label">Year GPA</div>
-        <div class="gpa-tile-val" id="gpa-yr">—</div>
-        <div class="gpa-tile-sub">Sem 1 + Sem 2 average</div>
+  <!-- ── GRADES SECTION ── -->
+  <div id="section-grades">
+    <div class="dash-body">
+      <div class="gpa-strip">
+        <div class="gpa-tile primary">
+          <div class="gpa-tile-label">Year GPA</div>
+          <div class="gpa-tile-val" id="gpa-yr">—</div>
+          <div class="gpa-tile-sub">Sem 1 + Sem 2 average</div>
+        </div>
+        <div class="gpa-tile">
+          <div class="gpa-tile-label">Semester 1</div>
+          <div class="gpa-tile-val" id="gpa-s1">—</div>
+          <div class="gpa-tile-sub">Q1 &amp; Q2 avg</div>
+        </div>
+        <div class="gpa-tile">
+          <div class="gpa-tile-label">Semester 2</div>
+          <div class="gpa-tile-val" id="gpa-s2">—</div>
+          <div class="gpa-tile-sub">Q3 &amp; Q4 avg</div>
+        </div>
       </div>
-      <div class="gpa-tile">
-        <div class="gpa-tile-label">Semester 1</div>
-        <div class="gpa-tile-val" id="gpa-s1">—</div>
-        <div class="gpa-tile-sub">Q1 &amp; Q2 avg</div>
+
+      <div class="tab-section">
+        <div class="tab-header">
+          <button class="tab-btn active" data-tab="q1">Quarter 1</button>
+          <button class="tab-btn" data-tab="q2">Quarter 2</button>
+          <button class="tab-btn" data-tab="s1">Sem 1 Avg</button>
+          <button class="tab-btn" data-tab="q3">Quarter 3</button>
+          <button class="tab-btn" data-tab="q4">Quarter 4</button>
+          <button class="tab-btn" data-tab="s2">Sem 2 Avg</button>
+          <button class="tab-btn" data-tab="all">All Quarters</button>
+        </div>
+        <div class="tab-pane active" id="tab-q1">
+          <table class="course-table"><thead><tr><th>Course</th><th>Q1 Grade</th><th>GPA pts</th></tr></thead><tbody id="body-q1"><tr><td colspan="3" class="tr-loading"><span class="sk-spin"></span>Loading…</td></tr></tbody></table>
+        </div>
+        <div class="tab-pane" id="tab-q2">
+          <table class="course-table"><thead><tr><th>Course</th><th>Q2 Grade</th><th>GPA pts</th></tr></thead><tbody id="body-q2"></tbody></table>
+        </div>
+        <div class="tab-pane" id="tab-s1">
+          <table class="course-table"><thead><tr><th>Course</th><th>Q1</th><th>Q2</th><th>Sem 1 Avg</th><th>GPA pts</th></tr></thead><tbody id="body-s1"></tbody></table>
+        </div>
+        <div class="tab-pane" id="tab-q3">
+          <table class="course-table"><thead><tr><th>Course</th><th>Q3 Grade</th><th>GPA pts</th></tr></thead><tbody id="body-q3"></tbody></table>
+        </div>
+        <div class="tab-pane" id="tab-q4">
+          <table class="course-table"><thead><tr><th>Course</th><th>Q4 Grade</th><th>GPA pts</th></tr></thead><tbody id="body-q4"></tbody></table>
+        </div>
+        <div class="tab-pane" id="tab-s2">
+          <table class="course-table"><thead><tr><th>Course</th><th>Q3</th><th>Q4</th><th>Sem 2 Avg</th><th>GPA pts</th></tr></thead><tbody id="body-s2"></tbody></table>
+        </div>
+        <div class="tab-pane" id="tab-all">
+          <table class="course-table"><thead><tr><th>Course</th><th>Q1</th><th>Q2</th><th>Q3</th><th>Q4</th><th>Year GPA pts</th></tr></thead><tbody id="body-all"></tbody></table>
+        </div>
+        <div class="scale-bar">
+          <span class="scale-chip" style="background:#fde8e8;color:#991b1b;border-color:transparent"><strong>AP</strong> — max 6.0 pts</span>
+          <span class="scale-chip" style="background:#e8ebff;color:#2440b0;border-color:transparent"><strong>Advanced</strong> — max 5.5 pts</span>
+          <span class="scale-chip"><strong>On-Level</strong> — max 5.0 pts</span>
+          <span class="scale-chip" style="color:var(--ink-3)">Every point below 100 = −0.1 GPA</span>
+        </div>
       </div>
-      <div class="gpa-tile">
-        <div class="gpa-tile-label">Semester 2</div>
-        <div class="gpa-tile-val" id="gpa-s2">—</div>
-        <div class="gpa-tile-sub">Q3 &amp; Q4 avg</div>
+
+      <div class="whatif-card">
+        <h3>What-if calculator</h3>
+        <p class="whatif-desc">See how a different Q4 grade would change your year GPA</p>
+        <div class="wi-row">
+          <select id="wi-course"></select>
+          <input type="number" id="wi-grade" placeholder="New Q4 grade" min="0" max="100" step="1" />
+        </div>
+        <div class="wi-result" id="wi-result"></div>
       </div>
+
+      <p class="footer-note">
+        Year GPA = (Sem 1 + Sem 2) ÷ 2 &nbsp;·&nbsp; Each semester = avg of course GPA points<br>
+        GPA pts: AP max 6.0, Advanced max 5.5, On-Level max 5.0 — subtract 0.1 per point below 100<br>
+        Live data from hac.friscoisd.org · Not affiliated with Frisco ISD
+      </p>
     </div>
+  </div>
 
-    <!-- Tab section -->
-    <div class="tab-section">
-      <div class="tab-header">
-        <button class="tab-btn active" data-tab="q1">Quarter 1</button>
-        <button class="tab-btn" data-tab="q2">Quarter 2</button>
-        <button class="tab-btn active-sem" data-tab="s1">Sem 1 Avg</button>
-        <button class="tab-btn" data-tab="q3">Quarter 3</button>
-        <button class="tab-btn" data-tab="q4">Quarter 4</button>
-        <button class="tab-btn" data-tab="s2">Sem 2 Avg</button>
-        <button class="tab-btn" data-tab="all">All Quarters</button>
+  <!-- ── TRANSCRIPT SECTION ── -->
+  <div id="section-transcript" style="display:none">
+    <div class="dash-body">
+
+      <!-- Official GPA summary -->
+      <div class="gpa-strip">
+        <div class="gpa-tile primary">
+          <div class="gpa-tile-label">Weighted GPA</div>
+          <div class="gpa-tile-val" id="tr-weighted">—</div>
+          <div class="gpa-tile-sub">Official cumulative</div>
+        </div>
+        <div class="gpa-tile">
+          <div class="gpa-tile-label">4.0 College GPA</div>
+          <div class="gpa-tile-val" id="tr-college">—</div>
+          <div class="gpa-tile-sub">Unweighted scale</div>
+        </div>
+        <div class="gpa-tile">
+          <div class="gpa-tile-label">Class Rank</div>
+          <div class="gpa-tile-val" id="tr-rank" style="font-size:20px;line-height:1.15">—</div>
+          <div class="gpa-tile-sub">Out of graduating class</div>
+        </div>
       </div>
 
-      <!-- Q1 -->
-      <div class="tab-pane active" id="tab-q1">
-        <table class="course-table">
-          <thead><tr><th>Course</th><th>Q1 Grade</th><th>GPA pts</th></tr></thead>
-          <tbody id="body-q1"><tr class="skeleton-row"><td colspan="3"><span class="sk-spin"></span>Loading…</td></tr></tbody>
-        </table>
+      <!-- Year-by-year accordion -->
+      <div id="tr-years">
+        <div class="tr-loading"><span class="sk-spin"></span>Click "Transcript" to load…</div>
       </div>
 
-      <!-- Q2 -->
-      <div class="tab-pane" id="tab-q2">
-        <table class="course-table">
-          <thead><tr><th>Course</th><th>Q2 Grade</th><th>GPA pts</th></tr></thead>
-          <tbody id="body-q2"></tbody>
-        </table>
-      </div>
-
-      <!-- Sem 1 -->
-      <div class="tab-pane" id="tab-s1">
-        <table class="course-table">
-          <thead><tr><th>Course</th><th>Q1</th><th>Q2</th><th>Sem 1 Avg</th><th>GPA pts</th></tr></thead>
-          <tbody id="body-s1"></tbody>
-        </table>
-      </div>
-
-      <!-- Q3 -->
-      <div class="tab-pane" id="tab-q3">
-        <table class="course-table">
-          <thead><tr><th>Course</th><th>Q3 Grade</th><th>GPA pts</th></tr></thead>
-          <tbody id="body-q3"></tbody>
-        </table>
-      </div>
-
-      <!-- Q4 -->
-      <div class="tab-pane" id="tab-q4">
-        <table class="course-table">
-          <thead><tr><th>Course</th><th>Q4 Grade</th><th>GPA pts</th></tr></thead>
-          <tbody id="body-q4"></tbody>
-        </table>
-      </div>
-
-      <!-- Sem 2 -->
-      <div class="tab-pane" id="tab-s2">
-        <table class="course-table">
-          <thead><tr><th>Course</th><th>Q3</th><th>Q4</th><th>Sem 2 Avg</th><th>GPA pts</th></tr></thead>
-          <tbody id="body-s2"></tbody>
-        </table>
-      </div>
-
-      <!-- All -->
-      <div class="tab-pane" id="tab-all">
-        <table class="course-table">
-          <thead><tr><th>Course</th><th>Q1</th><th>Q2</th><th>Q3</th><th>Q4</th><th>Year GPA pts</th></tr></thead>
-          <tbody id="body-all"></tbody>
-        </table>
-      </div>
-
-      <div class="scale-bar">
-        <span class="scale-chip" style="background:#fde8e8;color:#991b1b;border-color:transparent"><strong>AP</strong> — max 6.0 pts &nbsp;(100 = 6.0, 90 = 5.0, 80 = 4.0…)</span>
-        <span class="scale-chip" style="background:#e8ebff;color:#2440b0;border-color:transparent"><strong>Advanced / Adv</strong> — max 5.5 pts</span>
-        <span class="scale-chip" style="background:var(--surface-2);"><strong>On-Level</strong> — max 5.0 pts</span>
-        <span class="scale-chip" style="color:var(--ink-3);">Every point below 100 = −0.1 GPA</span>
-      </div>
+      <p class="footer-note" style="margin-top:1.5rem">
+        Official transcript data from hac.friscoisd.org · Not affiliated with Frisco ISD
+      </p>
     </div>
-
-    <!-- What-if -->
-    <div class="whatif-card">
-      <h3>What-if calculator</h3>
-      <p class="whatif-desc">See how a different Q4 grade would change your year GPA</p>
-      <div class="wi-row">
-        <select id="wi-course"></select>
-        <input type="number" id="wi-grade" placeholder="New Q4 grade" min="0" max="100" step="1" />
-      </div>
-      <div class="wi-result" id="wi-result"></div>
-    </div>
-
-    <p class="footer-note">
-      Year GPA = (Sem 1 + Sem 2) ÷ 2 &nbsp;·&nbsp; Each semester = avg of course GPA points<br>
-      GPA pts: start at max (AP=6, Adv=5.5, OL=5) and subtract 0.1 per point below 100<br>
-      Live data from hac.friscoisd.org · Not affiliated with Frisco ISD
-    </p>
   </div>
 </div>
 
 <script>
+  /* ── State ── */
   let courseData = [];
+  let _hacUser = '', _hacPass = '';
+  let _transcriptLoaded = false;
 
-  /* ── helpers ── */
+  /* ── GPA helpers ── */
   function courseLevel(name) {
-    const n = (name || "").toLowerCase().trim();
-    if (/\bap\b/.test(n)) return "ap";
-    if (/\badv(anced)?\b/.test(n)) return "adv";
-    return "ol";
+    const n = (name || '').toLowerCase().trim();
+    if (/\bap\b/.test(n)) return 'ap';
+    if (/\badv(anced)?\b/.test(n)) return 'adv';
+    return 'ol';
   }
   function toPoints(avg, name) {
     if (avg === null || avg === undefined || isNaN(avg)) return null;
     const level = courseLevel(name);
-    const max   = level === "ap" ? 6.0 : level === "adv" ? 5.5 : 5.0;
+    const max   = level === 'ap' ? 6.0 : level === 'adv' ? 5.5 : 5.0;
     const r     = Math.round(avg);
     return Math.max(0, Math.round((max - (100 - r) * 0.1) * 10) / 10);
   }
@@ -710,31 +368,31 @@
     if (v === null || v === undefined) return null;
     const n = parseFloat(v); return isNaN(n) ? null : n;
   }
+
+  /* ── UI helpers ── */
   function chip(v) {
-    if (v === null || v === undefined || isNaN(v))
-      return '<span class="g-null">—</span>';
+    if (v === null || v === undefined || isNaN(v)) return '<span class="g-null">—</span>';
     const d = v.toFixed(1);
-    if (v >= 90) return `<span class="grade-chip ga">${d}</span>`;
-    if (v >= 80) return `<span class="grade-chip gb">${d}</span>`;
-    if (v >= 70) return `<span class="grade-chip gc">${d}</span>`;
-    if (v >= 60) return `<span class="grade-chip gd">${d}</span>`;
-    return `<span class="grade-chip gf">${d}</span>`;
+    if (v >= 90) return '<span class="grade-chip ga">' + d + '</span>';
+    if (v >= 80) return '<span class="grade-chip gb">' + d + '</span>';
+    if (v >= 70) return '<span class="grade-chip gc">' + d + '</span>';
+    if (v >= 60) return '<span class="grade-chip gd">' + d + '</span>';
+    return '<span class="grade-chip gf">' + d + '</span>';
   }
   function badge(name) {
     const l = courseLevel(name);
-    // Show badge + max GPA scale so user knows which scale applies
-    if (l === 'ap')  return '<span class="c-badge badge-ap" title="AP scale: max 6.0">AP · 6.0</span>';
-    if (l === 'adv') return '<span class="c-badge badge-adv" title="Advanced scale: max 5.5">Adv · 5.5</span>';
-    return '<span class="c-badge badge-ol" title="On-Level scale: max 5.0">OL · 5.0</span>';
+    if (l === 'ap')  return '<span class="c-badge badge-ap">AP · 6.0</span>';
+    if (l === 'adv') return '<span class="c-badge badge-adv">Adv · 5.5</span>';
+    return '<span class="c-badge badge-ol">OL · 5.0</span>';
   }
   function ptsCell(pts, name) {
     if (pts === null) return '<span class="g-null">—</span>';
     const level = courseLevel(name || '');
     const max   = level === 'ap' ? '6.0' : level === 'adv' ? '5.5' : '5.0';
-    return `<span class="pts-badge">${pts.toFixed(1)}<span class="pts-max"> / ${max}</span></span>`;
+    return '<span class="pts-badge">' + pts.toFixed(1) + '<span class="pts-max"> / ' + max + '</span></span>';
   }
 
-  /* ── tab switching ── */
+  /* ── Tab switching ── */
   document.querySelectorAll('.tab-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
@@ -744,11 +402,19 @@
     });
   });
 
-  /* ── render ── */
-  function renderDash(name, level, courses) {
+  /* ── Section switching ── */
+  function showSection(sec) {
+    document.getElementById('section-grades').style.display     = sec === 'grades'     ? '' : 'none';
+    document.getElementById('section-transcript').style.display = sec === 'transcript' ? '' : 'none';
+    document.getElementById('tnav-grades').classList.toggle('active',     sec === 'grades');
+    document.getElementById('tnav-transcript').classList.toggle('active', sec === 'transcript');
+    if (sec === 'transcript' && !_transcriptLoaded) loadTranscript();
+  }
+
+  /* ── Render grades dashboard ── */
+  function renderDash(name, courses) {
     courseData = courses;
     document.getElementById('student-name-top').textContent = name || 'Student';
-
     const s1 = semGPA(courses, 1), s2 = semGPA(courses, 2), yr = yearGPA(courses);
     document.getElementById('gpa-yr').textContent = yr !== null ? yr.toFixed(2) : '—';
     document.getElementById('gpa-s1').textContent = s1 !== null ? s1.toFixed(2) : '—';
@@ -759,102 +425,144 @@
 
     function fill(tbodyId, rowFn) {
       const tbody = document.getElementById(tbodyId);
-      if (!tbody) return;
       tbody.innerHTML = '';
-      if (!courses.length) {
-        tbody.innerHTML = '<tr><td colspan="10" style="padding:2.5rem;text-align:center;color:var(--ink-4)">No courses found.</td></tr>';
-        return;
-      }
+      if (!courses.length) { tbody.innerHTML = '<tr><td colspan="10" style="padding:2.5rem;text-align:center;color:var(--ink-4)">No courses found.</td></tr>'; return; }
       courses.forEach((c, i) => tbody.insertAdjacentHTML('beforeend', rowFn(c, i)));
     }
 
-    // Q1
-    fill('body-q1', (c) => `<tr>
-      <td><span class="c-name">${c.name}${badge(c.name)}</span></td>
-      <td>${chip(c.q1avg)}</td>
-      <td>${ptsCell(toPoints(c.q1avg, c.name), c.name)}</td>
-    </tr>`);
+    fill('body-q1', c => '<tr><td><span class="c-name">' + c.name + badge(c.name) + '</span></td><td>' + chip(c.q1avg) + '</td><td>' + ptsCell(toPoints(c.q1avg, c.name), c.name) + '</td></tr>');
+    fill('body-q2', c => '<tr><td><span class="c-name">' + c.name + badge(c.name) + '</span></td><td>' + chip(c.q2avg) + '</td><td>' + ptsCell(toPoints(c.q2avg, c.name), c.name) + '</td></tr>');
+    fill('body-s1', c => { const a = avg2(c.q1avg, c.q2avg); return '<tr><td><span class="c-name">' + c.name + badge(c.name) + '</span></td><td>' + chip(c.q1avg) + '</td><td>' + chip(c.q2avg) + '</td><td>' + chip(a) + '</td><td>' + ptsCell(toPoints(a, c.name), c.name) + '</td></tr>'; });
+    fill('body-q3', c => '<tr><td><span class="c-name">' + c.name + badge(c.name) + '</span></td><td>' + chip(c.q3avg) + '</td><td>' + ptsCell(toPoints(c.q3avg, c.name), c.name) + '</td></tr>');
+    fill('body-q4', c => '<tr><td><span class="c-name">' + c.name + badge(c.name) + '</span></td><td>' + chip(c.q4avg) + '</td><td>' + ptsCell(toPoints(c.q4avg, c.name), c.name) + '</td></tr>');
+    fill('body-s2', c => { const a = avg2(c.q3avg, c.q4avg); return '<tr><td><span class="c-name">' + c.name + badge(c.name) + '</span></td><td>' + chip(c.q3avg) + '</td><td>' + chip(c.q4avg) + '</td><td>' + chip(a) + '</td><td>' + ptsCell(toPoints(a, c.name), c.name) + '</td></tr>'; });
+    fill('body-all', c => { const ya = avg2(avg2(c.q1avg, c.q2avg), avg2(c.q3avg, c.q4avg)); return '<tr><td><span class="c-name">' + c.name + badge(c.name) + '</span></td><td>' + chip(c.q1avg) + '</td><td>' + chip(c.q2avg) + '</td><td>' + chip(c.q3avg) + '</td><td>' + chip(c.q4avg) + '</td><td>' + ptsCell(toPoints(ya, c.name), c.name) + '</td></tr>'; });
 
-    // Q2
-    fill('body-q2', (c) => `<tr>
-      <td><span class="c-name">${c.name}${badge(c.name)}</span></td>
-      <td>${chip(c.q2avg)}</td>
-      <td>${ptsCell(toPoints(c.q2avg, c.name), c.name)}</td>
-    </tr>`);
-
-    // Sem 1
-    fill('body-s1', (c) => {
-      const a = avg2(c.q1avg, c.q2avg);
-      return `<tr>
-        <td><span class="c-name">${c.name}${badge(c.name)}</span></td>
-        <td>${chip(c.q1avg)}</td>
-        <td>${chip(c.q2avg)}</td>
-        <td>${chip(a)}</td>
-        <td>${ptsCell(toPoints(a, c.name), c.name)}</td>
-      </tr>`;
-    });
-
-    // Q3
-    fill('body-q3', (c) => `<tr>
-      <td><span class="c-name">${c.name}${badge(c.name)}</span></td>
-      <td>${chip(c.q3avg)}</td>
-      <td>${ptsCell(toPoints(c.q3avg, c.name), c.name)}</td>
-    </tr>`);
-
-    // Q4
-    fill('body-q4', (c) => `<tr>
-      <td><span class="c-name">${c.name}${badge(c.name)}</span></td>
-      <td>${chip(c.q4avg)}</td>
-      <td>${ptsCell(toPoints(c.q4avg, c.name), c.name)}</td>
-    </tr>`);
-
-    // Sem 2
-    fill('body-s2', (c) => {
-      const a = avg2(c.q3avg, c.q4avg);
-      return `<tr>
-        <td><span class="c-name">${c.name}${badge(c.name)}</span></td>
-        <td>${chip(c.q3avg)}</td>
-        <td>${chip(c.q4avg)}</td>
-        <td>${chip(a)}</td>
-        <td>${ptsCell(toPoints(a, c.name), c.name)}</td>
-      </tr>`;
-    });
-
-    // All
-    fill('body-all', (c) => {
-      const ya = avg2(avg2(c.q1avg, c.q2avg), avg2(c.q3avg, c.q4avg));
-      return `<tr>
-        <td><span class="c-name">${c.name}${badge(c.name)}</span></td>
-        <td>${chip(c.q1avg)}</td>
-        <td>${chip(c.q2avg)}</td>
-        <td>${chip(c.q3avg)}</td>
-        <td>${chip(c.q4avg)}</td>
-        <td>${ptsCell(toPoints(ya, c.name), c.name)}</td>
-      </tr>`;
-    });
-
-    // What-if dropdown
-    courses.forEach((c, i) => {
-      const o = document.createElement('option'); o.value = i; o.textContent = c.name; sel.appendChild(o);
-    });
+    courses.forEach((c, i) => { const o = document.createElement('option'); o.value = i; o.textContent = c.name; sel.appendChild(o); });
     document.getElementById('wi-result').innerHTML = '';
   }
 
-  /* ── what-if ── */
+  /* ── What-if ── */
   ['wi-grade','wi-course'].forEach(id => document.getElementById(id).addEventListener('input', calcWhatIf));
   function calcWhatIf() {
     const sel = document.getElementById('wi-course');
     const q4  = parseFloat(document.getElementById('wi-grade').value);
     const res = document.getElementById('wi-result');
-    if (!sel.options.length || isNaN(q4) || q4 < 0 || q4 > 100) { res.innerHTML=''; return; }
+    if (!sel.options.length || isNaN(q4) || q4 < 0 || q4 > 100) { res.innerHTML = ''; return; }
     const idx  = parseInt(sel.value);
-    const mod  = courseData.map((c,i) => i===idx ? {...c, q4avg: q4} : c);
+    const mod  = courseData.map((c, i) => i === idx ? Object.assign({}, c, { q4avg: q4 }) : c);
     const bef  = yearGPA(courseData), aft = yearGPA(mod);
-    const diff = (bef !== null && aft !== null) ? (aft-bef >= 0 ? '+' : '') + (aft-bef).toFixed(2) : '';
-    res.innerHTML = `New year GPA: <span class="hi">${aft !== null ? aft.toFixed(2) : '—'}</span> <span class="diff">(${diff} from ${bef !== null ? bef.toFixed(2) : '—'})</span>`;
+    const diff = (bef !== null && aft !== null) ? (aft - bef >= 0 ? '+' : '') + (aft - bef).toFixed(2) : '';
+    res.innerHTML = 'New year GPA: <span class="hi">' + (aft !== null ? aft.toFixed(2) : '—') + '</span> <span class="diff">(' + diff + ' from ' + (bef !== null ? bef.toFixed(2) : '—') + ')</span>';
   }
 
-  /* ── login flow ── */
+  /* ── Transcript load ── */
+  async function loadTranscript() {
+    const yearsEl = document.getElementById('tr-years');
+    yearsEl.innerHTML = '<div class="tr-loading"><span class="sk-spin"></span>Loading transcript…</div>';
+
+    if (_hacUser === '__demo__') {
+      // Show demo transcript data
+      renderTranscript({
+        gpa: { weighted: '5.2360', college: '3.9700', rank: '28 / 581' },
+        years: [
+          { year: '2023-2024', grade: '08', building: 'Summer School - High School', totalCredit: 3,
+            courses: [
+              { name: 'Algebra 1',         sem1: 91, sem2: 82, fin: null, credit: 1.0 },
+              { name: 'Spanish I',         sem1: 95, sem2: 95, fin: null, credit: 1.0 },
+              { name: 'Spanish II',        sem1: 95, sem2: 95, fin: null, credit: 1.0 },
+            ]},
+          { year: '2024-2025', grade: '09', building: 'Reedy High School', totalCredit: 10,
+            courses: [
+              { name: 'Spanish 3',                    sem1: 94, sem2: 92,  fin: null, credit: 1.0 },
+              { name: 'Professional Communications',  sem1: null, sem2: 98, fin: null, credit: 0.5 },
+              { name: 'AP Human Geography',           sem1: 95, sem2: 100, fin: null, credit: 1.0 },
+              { name: 'Computer Science I',           sem1: 95, sem2: 97,  fin: null, credit: 1.0 },
+              { name: 'English 1',                    sem1: 90, sem2: 98,  fin: null, credit: 1.0 },
+              { name: 'Algebra 2',                    sem1: 92, sem2: 100, fin: null, credit: 1.0 },
+              { name: 'Geometry',                     sem1: 94, sem2: 100, fin: null, credit: 1.0 },
+              { name: 'Biology',                      sem1: 94, sem2: 99,  fin: null, credit: 1.0 },
+              { name: 'Health Education',             sem1: 100, sem2: null, fin: null, credit: 0.5 },
+              { name: 'AP Precalculus',               sem1: 100, sem2: 100, fin: null, credit: 1.0 },
+              { name: 'Chemistry',                    sem1: 96, sem2: 99,  fin: null, credit: 1.0 },
+            ]},
+          { year: '2025-2026', grade: '10', building: 'Reedy High School', totalCredit: 4.5,
+            courses: [
+              { name: 'AP Computer Science A',        sem1: 100, sem2: null, fin: null, credit: 0.5 },
+              { name: 'AP World History',             sem1: 96,  sem2: null, fin: null, credit: 0.5 },
+              { name: 'AP Spanish Language & Culture',sem1: 87,  sem2: null, fin: null, credit: 0.5 },
+              { name: 'AP Biology',                   sem1: 94,  sem2: null, fin: null, credit: 0.5 },
+              { name: 'AP Calculus AB',               sem1: 97,  sem2: null, fin: null, credit: 0.5 },
+              { name: 'English 2',                    sem1: 99,  sem2: null, fin: null, credit: 0.5 },
+              { name: 'AP Physics 1',                 sem1: 100, sem2: null, fin: null, credit: 0.5 },
+              { name: 'Student Success (S1)',         sem1: 97,  sem2: null, fin: null, credit: 0.5 },
+            ]},
+        ]
+      });
+      _transcriptLoaded = true;
+      return;
+    }
+
+    try {
+      const res = await fetch('/api/transcript', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: _hacUser, password: _hacPass }),
+      });
+      if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error || 'Failed to load transcript.'); }
+      const data = await res.json();
+      renderTranscript(data);
+      _transcriptLoaded = true;
+    } catch (e) {
+      yearsEl.innerHTML = '<div class="tr-loading" style="color:var(--red)">' + e.message + '</div>';
+    }
+  }
+
+  /* ── Render transcript ── */
+  function renderTranscript({ gpa, years }) {
+    document.getElementById('tr-weighted').textContent = gpa.weighted || '—';
+    document.getElementById('tr-college').textContent  = gpa.college  || '—';
+    document.getElementById('tr-rank').textContent     = gpa.rank     || '—';
+
+    const yearsEl = document.getElementById('tr-years');
+    yearsEl.innerHTML = '';
+
+    if (!years || !years.length) {
+      yearsEl.innerHTML = '<div class="tr-loading">No transcript years found.</div>';
+      return;
+    }
+
+    years.slice().reverse().forEach((yr, i) => {
+      const block = document.createElement('div');
+      block.className = 'tr-year-block' + (i === 0 ? ' open' : '');
+
+      const courseRows = yr.courses.map(c => {
+        const lvl = courseLevel(c.name);
+        const lvlBadge = lvl === 'ap'  ? '<span class="c-badge badge-ap">AP</span>'
+                       : lvl === 'adv' ? '<span class="c-badge badge-adv">Adv</span>' : '';
+        return '<tr><td><span class="tr-course-name">' + c.name + lvlBadge + '</span></td><td>' + chip(c.sem1) + '</td><td>' + chip(c.sem2) + '</td><td>' + chip(c.fin) + '</td><td><span style="font-family:\'DM Mono\',monospace;font-size:12px;color:var(--ink-3)">' + (c.credit !== null ? c.credit.toFixed(1) : '—') + '</span></td></tr>';
+      }).join('');
+
+      block.innerHTML =
+        '<div class="tr-year-header" onclick="this.closest(\'.tr-year-block\').classList.toggle(\'open\')">' +
+          '<span class="tr-year-badge">' + (yr.year || 'Unknown Year') + '</span>' +
+          (yr.grade ? '<span class="tr-grade-badge">Grade ' + yr.grade + '</span>' : '') +
+          (yr.building ? '<span class="tr-building">' + yr.building + '</span>' : '') +
+          '<span class="tr-credit">' + yr.totalCredit.toFixed(1) + ' credits</span>' +
+          '<span class="tr-chevron">▼</span>' +
+        '</div>' +
+        '<div class="tr-year-body">' +
+          '<table class="tr-table">' +
+            '<thead><tr><th>Course</th><th>Sem 1</th><th>Sem 2</th><th>Final</th><th>Credits</th></tr></thead>' +
+            '<tbody>' + (courseRows || '<tr><td colspan="5" style="text-align:center;padding:1.5rem;color:var(--ink-4)">No graded courses</td></tr>') + '</tbody>' +
+          '</table>' +
+        '</div>';
+
+      yearsEl.appendChild(block);
+    });
+  }
+
+  /* ── Login flow ── */
   function showLogin() {
     document.getElementById('screen-login').classList.remove('hidden');
     document.getElementById('screen-dash').classList.remove('active');
@@ -862,8 +570,8 @@
   function showDash(name, level, courses) {
     document.getElementById('screen-login').classList.add('hidden');
     document.getElementById('screen-dash').classList.add('active');
-    renderDash(name, level, courses);
-    // reset to Q1 tab
+    showSection('grades');
+    renderDash(name, courses);
     document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
     document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
     document.querySelector('[data-tab="q1"]').classList.add('active');
@@ -873,7 +581,7 @@
   document.getElementById('btn-logout').addEventListener('click', () => {
     document.getElementById('hac-user').value = '';
     document.getElementById('hac-pass').value = '';
-    courseData = [];
+    courseData = []; _transcriptLoaded = false; _hacUser = ''; _hacPass = '';
     const btn = document.getElementById('btn-login');
     btn.disabled = false; btn.textContent = 'Load my grades';
     showLogin();
@@ -885,42 +593,23 @@
   async function doLogin() {
     const user  = document.getElementById('hac-user').value.trim();
     const pass  = document.getElementById('hac-pass').value;
+    _hacUser = user; _hacPass = pass;
     const errEl = document.getElementById('login-err');
     const btn   = document.getElementById('btn-login');
     errEl.classList.remove('show');
-
-    if (!user || !pass) {
-      document.getElementById('err-text').textContent = 'Please enter your student ID and password.';
-      errEl.classList.add('show'); return;
-    }
-
+    if (!user || !pass) { document.getElementById('err-text').textContent = 'Please enter your student ID and password.'; errEl.classList.add('show'); return; }
     btn.disabled = true;
     btn.innerHTML = '<span class="spin"></span>Loading grades…';
-
     try {
-      const res = await fetch('/api/grades', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: user, password: pass }),
-      });
-
+      const res = await fetch('/api/grades', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ username: user, password: pass }) });
       if (res.status === 401) throw new Error('Incorrect username or password.');
-      if (!res.ok) {
-        const e = await res.json().catch(() => ({}));
-        throw new Error(e.error || 'Server error — try again.');
-      }
-
+      if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error || 'Server error — try again.'); }
       const data = await res.json();
       const courses = (data.courses || []).map(c => ({
-        name:  c.name || 'Unknown',
-        q1avg: num(c.q1avg),
-        q2avg: num(c.q2avg),
-        q3avg: num(c.q3avg),
-        q4avg: num(c.q4avg ?? c.avg),
+        name: c.name || 'Unknown',
+        q1avg: num(c.q1avg), q2avg: num(c.q2avg), q3avg: num(c.q3avg), q4avg: num(c.q4avg ?? c.avg),
       })).filter(c => c.name !== 'Unknown' && [c.q1avg,c.q2avg,c.q3avg,c.q4avg].some(v => v !== null));
-
       if (!courses.length) throw new Error('No grade data found. Check credentials or try again.');
-
       let studentName = '';
       const s = data.student || {};
       if (s.name && s.name.trim()) {
@@ -929,29 +618,27 @@
           const [last, rest] = raw.split(',');
           const first = (rest || '').trim().split(/\s+/)[0] || '';
           const tc = w => w ? w.charAt(0).toUpperCase() + w.slice(1).toLowerCase() : '';
-          studentName = `${tc(first)} ${tc(last)}`.trim();
+          studentName = (tc(first) + ' ' + tc(last)).trim();
         } else { studentName = raw; }
       }
-      const gradeLevel = s.grade ? `Grade ${s.grade.trim()}${s.campus ? ' · ' + s.campus : ''}` : '';
-      showDash(studentName, gradeLevel, courses);
-
+      showDash(studentName, s.grade || '', courses);
     } catch (e) {
       document.getElementById('err-text').textContent = e.message || 'Something went wrong.';
       errEl.classList.add('show');
-      btn.disabled = false;
-      btn.textContent = 'Load my grades';
+      btn.disabled = false; btn.textContent = 'Load my grades';
     }
   }
 
   document.getElementById('btn-demo').addEventListener('click', () => {
-    showDash('Alex Rivera', 'Grade 11 · Frisco ISD', [
-      { name: 'AP Calculus AB',          q1avg: 91, q2avg: 89, q3avg: 87, q4avg: 92 },
-      { name: 'AP Computer Science A',   q1avg: 96, q2avg: 95, q3avg: 94, q4avg: 97 },
-      { name: 'AP World History',        q1avg: 85, q2avg: 84, q3avg: 83, q4avg: 86 },
-      { name: 'English 3 Adv',           q1avg: 93, q2avg: 92, q3avg: 90, q4avg: 94 },
-      { name: 'Chemistry Adv',           q1avg: 88, q2avg: 87, q3avg: 86, q4avg: 89 },
-      { name: 'Spanish 3',               q1avg: 95, q2avg: 94, q3avg: 93, q4avg: 96 },
-      { name: 'PE Athletics',            q1avg: 98, q2avg: 98, q3avg: 97, q4avg: 99 },
+    _hacUser = '__demo__'; _hacPass = '__demo__'; _transcriptLoaded = false;
+    showDash('Alex Rivera', 'Grade 10', [
+      { name:'AP Calculus AB',         q1avg:91,q2avg:89,q3avg:87,q4avg:92 },
+      { name:'AP Computer Science A',  q1avg:96,q2avg:95,q3avg:94,q4avg:97 },
+      { name:'AP World History',       q1avg:85,q2avg:84,q3avg:83,q4avg:86 },
+      { name:'English 2 Adv',         q1avg:93,q2avg:92,q3avg:90,q4avg:94 },
+      { name:'AP Biology',            q1avg:88,q2avg:87,q3avg:86,q4avg:89 },
+      { name:'Spanish 3',             q1avg:95,q2avg:94,q3avg:93,q4avg:96 },
+      { name:'AP Physics 1',          q1avg:98,q2avg:98,q3avg:97,q4avg:99 },
     ]);
   });
 </script>
