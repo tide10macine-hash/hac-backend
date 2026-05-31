@@ -522,15 +522,158 @@ app.post('/api/diagnose', async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// DIAGNOSTIC: Transcript page structure dump
+// TRANSCRIPT — URL + course name expansion lookup
 // ─────────────────────────────────────────────────────────────────────────────
 const TRANSCRIPT_URL = `${HAC_BASE}/HomeAccess/Content/Student/Transcript.aspx`;
 
+const COURSE_LOOKUP = {
+  // Math
+  'ALG 1':'Algebra 1','ALG 2':'Algebra 2','GEOM':'Geometry',
+  'APCALCAB':'AP Calculus AB','APCALCBC':'AP Calculus BC',
+  'AP Precalculus':'AP Precalculus','PRECALC':'Pre-Calculus',
+  'STATS':'Statistics','APSTATS':'AP Statistics',
+  // Science
+  'BIO':'Biology','APBIO':'AP Biology','CHEM':'Chemistry',
+  'Chemistry':'Chemistry','APCHEM':'AP Chemistry',
+  'APPHYS1':'AP Physics 1','APPHYS2':'AP Physics 2',
+  'APPHYSC':'AP Physics C: Mechanics','PHYS':'Physics',
+  // English
+  'ENG 1':'English 1','ENG 2':'English 2','ENG 3':'English 3','ENG 4':'English 4',
+  'APLANG':'AP Language & Composition','APLIT':'AP Literature & Composition',
+  // Social Studies
+  'APHUMGEOW':'AP Human Geography','APWHIST':'AP World History',
+  'APUSHIST':'AP US History','APGOV':'AP Government & Politics',
+  'APECON':'AP Economics','APPSYCH':'AP Psychology',
+  'APSEM':'AP Seminar','APRES':'AP Research',
+  'APSPALAN':'AP Spanish Language & Culture',
+  // Language
+  'SPAN 3':'Spanish 3','SPAN 4':'Spanish 4',
+  'LOTE Level I - Spanish':'Spanish I','LOTE Level II - Spanish':'Spanish II',
+  // CS / Tech
+  'APTACSAM':'AP Computer Science A (S1)','APTACSAL':'AP Computer Science A (S2)',
+  'APCSA':'AP Computer Science A',
+  'TACS1':'Computer Science I','TACS2':'Computer Science II',
+  'AP Computer Science 1 WL':'AP Computer Science 1',
+  // Other
+  'PROFCOMM':'Professional Communications','HLTHED1':'Health Education',
+  'SS RES3':'Student Success (S1)','SS RES4':'Student Success (S2)',
+};
+
+function expandCourseName(raw) {
+  if (!raw) return raw;
+  return COURSE_LOOKUP[raw.trim()] || raw.trim();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PARSE TRANSCRIPT PAGE
+// Returns { gpa, years }
+//   gpa:   { weighted, college, rank }
+//   years: [{ year, grade, building, totalCredit, courses: [{code,name,sem1,sem2,fin,credit}] }]
+// ─────────────────────────────────────────────────────────────────────────────
+function parseTranscript(html) {
+  const $ = cheerio.load(html);
+
+  // ── GPA & Rank from plnMain_rpTranscriptGroup_tblCumGPAInfo ──────────
+  const gpa = { weighted: null, college: null, rank: null };
+  $('#plnMain_rpTranscriptGroup_tblCumGPAInfo tr').each((ri, row) => {
+    if (ri === 0) return;
+    const cells = $(row).find('td').map((_, td) => $(td).text().trim()).get();
+    const label = (cells[0] || '').toLowerCase();
+    if (label.includes('weighted')) {
+      if (cells[1]) gpa.weighted = cells[1];
+      if (cells[2]) gpa.rank     = cells[2];
+    } else if (label.includes('4.0') || label.includes('college')) {
+      if (cells[1]) gpa.college = cells[1];
+    }
+  });
+
+  // ── Year groups — plnMain_rpTranscriptGroup_dgCourses_0, _1, _2 ... ──
+  // Collect all year strings and building strings from the page in order
+  // so we can index them by group number.
+  const allYears     = [];
+  const allBuildings = [];
+  $('td').each((_, el) => {
+    const txt = $(el).text().trim();
+    if (/^\d{4}-\d{4}$/.test(txt))                        allYears.push(txt);
+    if (/high school|middle school|summer/i.test(txt) && txt.length < 60) allBuildings.push(txt);
+  });
+
+  const years = [];
+  let idx = 0;
+  while (true) {
+    const $ct = $(`#plnMain_rpTranscriptGroup_dgCourses_${idx}`);
+    if (!$ct.length) break;
+
+    const grade  = $(`#plnMain_rpTranscriptGroup_lblGradeValue_${idx}`).text().trim();
+    const credit = $(`#plnMain_rpTranscriptGroup_LblTCreditValue_${idx}`).text().trim();
+    const year   = allYears[idx]     || '';
+    const building = allBuildings[idx] || '';
+
+    // Parse course rows (skip header row ri=0)
+    const courses = [];
+    $ct.find('tr').each((ri, row) => {
+      if (ri === 0) return;
+      const cells = $(row).find('td').map((_, td) => $(td).text().trim()).get();
+      if (cells.length < 4) return;
+      const code    = cells[0];
+      const rawName = cells[1];
+      if (!code || !rawName) return;
+      const sem1   = cells[2] !== '' ? parseFloat(cells[2]) : null;
+      const sem2   = cells[3] !== '' ? parseFloat(cells[3]) : null;
+      const fin    = cells[4] !== '' ? parseFloat(cells[4]) : null;
+      const cred   = cells[5] !== '' ? parseFloat(cells[5]) : null;
+      // Skip rows with no grades at all (e.g. in-progress S2 not yet graded)
+      if (sem1 === null && sem2 === null && fin === null) return;
+      courses.push({
+        code,
+        name:   expandCourseName(rawName),
+        sem1,
+        sem2,
+        fin,
+        credit: cred,
+      });
+    });
+
+    years.push({ year, grade, building, totalCredit: parseFloat(credit) || 0, courses });
+    idx++;
+  }
+
+  years.sort((a, b) => (a.year || '').localeCompare(b.year || ''));
+  return { gpa, years };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// /api/transcript
+// ─────────────────────────────────────────────────────────────────────────────
+app.post('/api/transcript', async (req, res) => {
+  const { username, password } = req.body || {};
+  if (!username || !password)
+    return res.status(400).json({ error: 'Username and password required.' });
+  const client = makeClient();
+  try {
+    await login(client, username, password);
+    const tRes = await client.get(TRANSCRIPT_URL, {
+      headers: { Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8' },
+    });
+    const transcript = parseTranscript(tRes.data);
+    if (!transcript.years.length)
+      return res.status(404).json({ error: 'No transcript data found.' });
+    console.log('[transcript] GPA:', transcript.gpa, '| years:', transcript.years.length);
+    res.json(transcript);
+  } catch (err) {
+    console.error('[/api/transcript]', err.message);
+    const status = err.message?.includes('username or password') ? 401 : 500;
+    res.status(status).json({ error: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// /api/diagnose-transcript  (keep for debugging)
+// ─────────────────────────────────────────────────────────────────────────────
 app.post('/api/diagnose-transcript', async (req, res) => {
   const { username, password } = req.body || {};
   if (!username || !password)
     return res.status(400).json({ error: 'Username and password required.' });
-
   const client = makeClient();
   try {
     await login(client, username, password);
@@ -538,8 +681,6 @@ app.post('/api/diagnose-transcript', async (req, res) => {
       headers: { Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8' },
     });
     const $ = cheerio.load(tRes.data);
-
-    // Dump every table (up to 30 rows each) with its ID and full cell text
     const tables = [];
     $('table').each((ti, table) => {
       const rows = [];
@@ -549,26 +690,17 @@ app.post('/api/diagnose-transcript', async (req, res) => {
         $(row).find('td, th').each((_, td) => cells.push($(td).text().trim().substring(0, 80)));
         if (cells.some(c => c.length)) rows.push(cells);
       });
-      if (rows.length) tables.push({ tableIndex: ti, id: $(table).attr('id') || '', class: $(table).attr('class') || '', rows });
+      if (rows.length) tables.push({ tableIndex: ti, id: $(table).attr('id') || '', rows });
     });
-
-    // Also dump all elements with IDs that might hold GPA/rank summary
-    const summaryFields = [];
-    $('[id]').each((_, el) => {
-      const id  = $(el).attr('id') || '';
-      const txt = $(el).text().trim().replace(/\s+/g, ' ').substring(0, 100);
-      if (txt && txt.length > 0 && /gpa|rank|credit|class|cumul|grade|honor/i.test(id)) {
-        summaryFields.push({ id, text: txt });
-      }
-    });
-
-    res.json({ tables, summaryFields });
+    res.json({ tables });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
 });
 
-
+// ─────────────────────────────────────────────────────────────────────────────
+// STATIC + HEALTH
+// ─────────────────────────────────────────────────────────────────────────────
 app.get('/',           (_, res) => res.sendFile(path.join(__dirname, 'index.html')));
 app.get('/api/health', (_, res) => res.json({ ok: true, ts: Date.now() }));
 
