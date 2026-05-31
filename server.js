@@ -522,8 +522,53 @@ app.post('/api/diagnose', async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// STATIC + HEALTH
+// DIAGNOSTIC: Transcript page structure dump
 // ─────────────────────────────────────────────────────────────────────────────
+const TRANSCRIPT_URL = `${HAC_BASE}/HomeAccess/Content/Student/Transcript.aspx`;
+
+app.post('/api/diagnose-transcript', async (req, res) => {
+  const { username, password } = req.body || {};
+  if (!username || !password)
+    return res.status(400).json({ error: 'Username and password required.' });
+
+  const client = makeClient();
+  try {
+    await login(client, username, password);
+    const tRes = await client.get(TRANSCRIPT_URL, {
+      headers: { Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8' },
+    });
+    const $ = cheerio.load(tRes.data);
+
+    // Dump every table (up to 30 rows each) with its ID and full cell text
+    const tables = [];
+    $('table').each((ti, table) => {
+      const rows = [];
+      $(table).find('tr').each((ri, row) => {
+        if (ri > 30) return false;
+        const cells = [];
+        $(row).find('td, th').each((_, td) => cells.push($(td).text().trim().substring(0, 80)));
+        if (cells.some(c => c.length)) rows.push(cells);
+      });
+      if (rows.length) tables.push({ tableIndex: ti, id: $(table).attr('id') || '', class: $(table).attr('class') || '', rows });
+    });
+
+    // Also dump all elements with IDs that might hold GPA/rank summary
+    const summaryFields = [];
+    $('[id]').each((_, el) => {
+      const id  = $(el).attr('id') || '';
+      const txt = $(el).text().trim().replace(/\s+/g, ' ').substring(0, 100);
+      if (txt && txt.length > 0 && /gpa|rank|credit|class|cumul|grade|honor/i.test(id)) {
+        summaryFields.push({ id, text: txt });
+      }
+    });
+
+    res.json({ tables, summaryFields });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+
 app.get('/',           (_, res) => res.sendFile(path.join(__dirname, 'index.html')));
 app.get('/api/health', (_, res) => res.json({ ok: true, ts: Date.now() }));
 
