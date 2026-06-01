@@ -588,9 +588,10 @@
           const safeName = c.name.replace(/&/g,'&amp;').replace(/"/g,'&quot;');
           weightCell = '<td class="weight-cell">'
             + '<select class="weight-select ' + sc + '" data-course="' + safeName + '" title="Override weight">'
-            + '<option value="auto"' + (eff==='ol'  ?' selected':'') + '>On-Level</option>'
-            + '<option value="adv"'  + (eff==='adv' ?' selected':'') + '>Advanced</option>'
-            + '<option value="ap"'   + (eff==='ap'  ?' selected':'') + '>AP</option>'
+            + '<option value="auto"'   + (eff==='ol'      ?' selected':'') + '>On-Level</option>'
+            + '<option value="adv"'    + (eff==='adv'     ?' selected':'') + '>Advanced</option>'
+            + '<option value="ap"'     + (eff==='ap'      ?' selected':'') + '>AP</option>'
+            + '<option value="exclude"'+ (eff==='exclude' ?' selected':'') + '>Exclude from GPA</option>'
             + '</select><span class="weight-saved-dot" id="' + dotId + '"></span></td>';
         } else {
           weightCell = '<td class="weight-cell"><span style="font-size:11px;color:var(--ink-4)">' + (eff==='ap'?'AP':'Adv') + '</span></td>';
