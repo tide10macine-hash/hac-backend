@@ -148,6 +148,27 @@
     .sk-spin { display:inline-block; width:15px; height:15px; border:2px solid rgba(61,90,255,.2); border-top-color:var(--accent); border-radius:50%; animation:spin .7s linear infinite; vertical-align:middle; margin-right:7px; }
     .tr-loading { padding:2.5rem; text-align:center; color:var(--ink-4); font-size:13.5px; }
 
+    /* Weight override UI */
+    .tr-table tbody tr { position:relative; }
+    .weight-cell { white-space:nowrap; }
+    .weight-select {
+      font-family:'Instrument Sans',sans-serif; font-size:11px; font-weight:600;
+      padding:3px 6px 3px 8px; border-radius:5px; cursor:pointer; outline:none;
+      border:1.5px solid transparent; transition:all .15s; appearance:none;
+      -webkit-appearance:none; background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%23888' stroke-width='2.5'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+      background-repeat:no-repeat; background-position:right 5px center; padding-right:20px;
+    }
+    .weight-select.w-ol  { background-color:var(--surface-2); color:var(--ink-3); border-color:var(--border-2); }
+    .weight-select.w-adv { background-color:var(--accent-dim); color:#2440b0; border-color:rgba(61,90,255,.25); }
+    .weight-select.w-ap  { background-color:var(--red-dim); color:#b91c1c; border-color:rgba(232,64,64,.25); }
+    .weight-select:hover, .weight-select:focus { border-color:var(--accent); box-shadow:0 0 0 2px rgba(61,90,255,.1); }
+    .weight-saved-dot {
+      display:inline-block; width:5px; height:5px; border-radius:50%;
+      background:var(--green); margin-left:5px; vertical-align:middle;
+      opacity:0; transition:opacity .4s;
+    }
+    .weight-saved-dot.show { opacity:1; }
+
     .footer-note { font-size:11.5px; color:var(--ink-4); text-align:center; line-height:1.8; }
 
     @media (max-width:560px) {
@@ -511,49 +532,116 @@
     }
   }
 
+  /* ── Weight overrides — persisted in localStorage per student ── */
+  function _overrideKey() {
+    let h = 0;
+    for (let i = 0; i < _hacUser.length; i++) h = (Math.imul(31, h) + _hacUser.charCodeAt(i)) | 0;
+    return 'gf_overrides_' + Math.abs(h);
+  }
+  function loadOverrides() {
+    try { return JSON.parse(localStorage.getItem(_overrideKey()) || '{}'); }
+    catch(e) { return {}; }
+  }
+  function saveOverride(courseName, level) {
+    const overrides = loadOverrides();
+    if (level === 'auto') { delete overrides[courseName]; }
+    else { overrides[courseName] = level; }
+    localStorage.setItem(_overrideKey(), JSON.stringify(overrides));
+  }
+
   /* ── Render transcript ── */
+  let _transcriptData = null;
+
   function renderTranscript({ gpa, years }) {
-    document.getElementById('tr-weighted').textContent = gpa.weighted || '—';
-    document.getElementById('tr-college').textContent  = gpa.college  || '—';
-    document.getElementById('tr-rank').textContent     = gpa.rank     || '—';
+    _transcriptData = { gpa, years };
+    document.getElementById('tr-weighted').textContent = gpa.weighted || '\u2014';
+    document.getElementById('tr-college').textContent  = gpa.college  || '\u2014';
+    document.getElementById('tr-rank').textContent     = gpa.rank     || '\u2014';
+    _renderTranscriptYears(years);
+  }
 
+  function _renderTranscriptYears(years) {
     const yearsEl = document.getElementById('tr-years');
+    const openYears = new Set();
+    yearsEl.querySelectorAll('.tr-year-block.open').forEach(b => openYears.add(b.dataset.year));
     yearsEl.innerHTML = '';
+    if (!years || !years.length) { yearsEl.innerHTML = '<div class="tr-loading">No transcript years found.</div>'; return; }
 
-    if (!years || !years.length) {
-      yearsEl.innerHTML = '<div class="tr-loading">No transcript years found.</div>';
-      return;
-    }
+    const overrides = loadOverrides();
 
     years.slice().reverse().forEach((yr, i) => {
-      const block = document.createElement('div');
-      block.className = 'tr-year-block' + (i === 0 ? ' open' : '');
+      const isOpen = openYears.size ? openYears.has(yr.year) : i === 0;
+      const block  = document.createElement('div');
+      block.className  = 'tr-year-block' + (isOpen ? ' open' : '');
+      block.dataset.year = yr.year;
 
-      const courseRows = yr.courses.map(c => {
-        const lvl = courseLevel(c.name);
-        const lvlBadge = lvl === 'ap'  ? '<span class="c-badge badge-ap">AP</span>'
-                       : lvl === 'adv' ? '<span class="c-badge badge-adv">Adv</span>' : '';
-        return '<tr><td><span class="tr-course-name">' + c.name + lvlBadge + '</span></td><td>' + chip(c.sem1) + '</td><td>' + chip(c.sem2) + '</td><td>' + chip(c.fin) + '</td><td><span style="font-family:\'DM Mono\',monospace;font-size:12px;color:var(--ink-3)">' + (c.credit !== null ? c.credit.toFixed(1) : '—') + '</span></td></tr>';
+      const tbody = yr.courses.map(c => {
+        const nat = courseLevel(c.name);
+        const eff = overrides[c.name] || nat;
+        const isEditable = (nat === 'ol');
+        const lvlBadge = eff === 'ap'  ? '<span class="c-badge badge-ap">AP</span>'
+                       : eff === 'adv' ? '<span class="c-badge badge-adv">Adv</span>' : '';
+        const dotId = 'dot-' + c.name.replace(/[^a-z0-9]/gi,'_');
+        let weightCell;
+        if (isEditable) {
+          const sc = eff === 'adv' ? 'w-adv' : eff === 'ap' ? 'w-ap' : 'w-ol';
+          const safeName = c.name.replace(/&/g,'&amp;').replace(/"/g,'&quot;');
+          weightCell = '<td class="weight-cell">'
+            + '<select class="weight-select ' + sc + '" data-course="' + safeName + '" title="Override weight">'
+            + '<option value="auto"' + (eff==='ol'  ?' selected':'') + '>On-Level</option>'
+            + '<option value="adv"'  + (eff==='adv' ?' selected':'') + '>Advanced</option>'
+            + '<option value="ap"'   + (eff==='ap'  ?' selected':'') + '>AP</option>'
+            + '</select><span class="weight-saved-dot" id="' + dotId + '"></span></td>';
+        } else {
+          weightCell = '<td class="weight-cell"><span style="font-size:11px;color:var(--ink-4)">' + (eff==='ap'?'AP':'Adv') + '</span></td>';
+        }
+        return '<tr>'
+          + '<td><span class="tr-course-name">' + c.name + lvlBadge + '</span></td>'
+          + '<td>' + chip(c.sem1) + '</td>'
+          + '<td>' + chip(c.sem2) + '</td>'
+          + '<td>' + chip(c.fin)  + '</td>'
+          + '<td><span style="font-family:DM Mono,monospace;font-size:12px;color:var(--ink-3)">' + (c.credit!==null?c.credit.toFixed(1):'\u2014') + '</span></td>'
+          + weightCell
+          + '</tr>';
       }).join('');
 
+      const hasOverrides = Object.keys(overrides).length > 0;
       block.innerHTML =
-        '<div class="tr-year-header" onclick="this.closest(\'.tr-year-block\').classList.toggle(\'open\')">' +
-          '<span class="tr-year-badge">' + (yr.year || 'Unknown Year') + '</span>' +
-          (yr.grade ? '<span class="tr-grade-badge">Grade ' + yr.grade + '</span>' : '') +
-          (yr.building ? '<span class="tr-building">' + yr.building + '</span>' : '') +
-          '<span class="tr-credit">' + yr.totalCredit.toFixed(1) + ' credits</span>' +
-          '<span class="tr-chevron">▼</span>' +
-        '</div>' +
-        '<div class="tr-year-body">' +
-          '<table class="tr-table">' +
-            '<thead><tr><th>Course</th><th>Sem 1</th><th>Sem 2</th><th>Final</th><th>Credits</th></tr></thead>' +
-            '<tbody>' + (courseRows || '<tr><td colspan="5" style="text-align:center;padding:1.5rem;color:var(--ink-4)">No graded courses</td></tr>') + '</tbody>' +
-          '</table>' +
-        '</div>';
+        '<div class="tr-year-header" onclick="toggleYearBlock(this)">'
+          + '<span class="tr-year-badge">' + (yr.year||'Unknown Year') + '</span>'
+          + (yr.grade    ? '<span class="tr-grade-badge">Grade '+yr.grade+'</span>' : '')
+          + (yr.building ? '<span class="tr-building">'+yr.building+'</span>' : '')
+          + '<span class="tr-credit">'+yr.totalCredit.toFixed(1)+' credits</span>'
+          + '<span class="tr-chevron">\u25bc</span>'
+        + '</div>'
+        + '<div class="tr-year-body">'
+          + '<table class="tr-table">'
+            + '<thead><tr><th>Course</th><th>Sem 1</th><th>Sem 2</th><th>Final</th><th>Credits</th><th>Weight</th></tr></thead>'
+            + '<tbody>' + (tbody||'<tr><td colspan="6" style="text-align:center;padding:1.5rem;color:var(--ink-4)">No graded courses</td></tr>') + '</tbody>'
+          + '</table>'
+          + (hasOverrides ? '<div style="padding:8px 16px 10px;font-size:11.5px;color:var(--green);border-top:1px solid var(--border)">\u2713 Weight overrides saved to this device</div>' : '')
+        + '</div>';
 
       yearsEl.appendChild(block);
     });
   }
+
+  function toggleYearBlock(el) { el.closest('.tr-year-block').classList.toggle('open'); }
+
+  // Event delegation — one listener on the container handles all selects
+  document.getElementById('tr-years').addEventListener('change', function(e) {
+    const sel = e.target;
+    if (!sel.classList.contains('weight-select')) return;
+    const courseName = sel.dataset.course;
+    const val = sel.value;
+    saveOverride(courseName, val);
+    sel.className = 'weight-select ' + (val==='adv'?'w-adv':val==='ap'?'w-ap':'w-ol');
+    const dotId = 'dot-' + courseName.replace(/[^a-z0-9]/gi,'_');
+    const dot = document.getElementById(dotId);
+    if (dot) { dot.classList.add('show'); setTimeout(()=>dot.classList.remove('show'), 2000); }
+    if (_transcriptData) _renderTranscriptYears(_transcriptData.years);
+  });
+
 
   /* ── Login flow ── */
   function showLogin() {
