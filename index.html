@@ -664,6 +664,8 @@
     document.getElementById('hac-user').value = '';
     document.getElementById('hac-pass').value = '';
     courseData = []; _transcriptLoaded = false; _hacUser = ''; _hacPass = '';
+    sessionStorage.removeItem('gf_user'); sessionStorage.removeItem('gf_pass');
+    _stopInactivityWatch();
     const btn = document.getElementById('btn-login');
     btn.disabled = false; btn.textContent = 'Load my grades';
     showLogin();
@@ -703,7 +705,11 @@
           studentName = (tc(first) + ' ' + tc(last)).trim();
         } else { studentName = raw; }
       }
+      // Persist session so refresh doesn't log out
+      sessionStorage.setItem('gf_user', user);
+      sessionStorage.setItem('gf_pass', pass);
       showDash(studentName, s.grade || '', courses);
+      _startInactivityWatch();
     } catch (e) {
       document.getElementById('err-text').textContent = e.message || 'Something went wrong.';
       errEl.classList.add('show');
@@ -723,6 +729,144 @@
       { name:'AP Physics 1',          q1avg:98,q2avg:98,q3avg:97,q4avg:99 },
     ]);
   });
+  /* ── Inactivity auto-logout (10 min) ── */
+  const INACTIVITY_MS = 10 * 60 * 1000; // 10 minutes
+  let _inactivityTimer = null;
+  let _warningTimer = null;
+  let _warningEl = null;
+
+  function _createWarningBanner() {
+    if (_warningEl) return;
+    _warningEl = document.createElement('div');
+    _warningEl.id = 'inactivity-warning';
+    _warningEl.style.cssText = [
+      'position:fixed', 'bottom:20px', 'left:50%', 'transform:translateX(-50%)',
+      'background:#0d0f12', 'color:#fff', 'font-family:Instrument Sans,sans-serif',
+      'font-size:13.5px', 'font-weight:500', 'padding:12px 20px',
+      'border-radius:10px', 'box-shadow:0 4px 24px rgba(0,0,0,0.35)',
+      'display:flex', 'align-items:center', 'gap:12px', 'z-index:9999',
+      'opacity:0', 'transition:opacity 0.2s', 'pointer-events:none'
+    ].join(';');
+    _warningEl.innerHTML =
+      '<svg width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="#f0a832" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>' +
+      '<span id="inactivity-msg">Logging out in <strong>60s</strong> due to inactivity</span>' +
+      '<button onclick="_resetInactivity()" style="margin-left:8px;font-family:inherit;font-size:12px;font-weight:600;padding:5px 11px;border-radius:6px;border:none;background:rgba(255,255,255,0.15);color:#fff;cursor:pointer">Stay signed in</button>';
+    document.body.appendChild(_warningEl);
+  }
+
+  function _showWarning(secondsLeft) {
+    _createWarningBanner();
+    _warningEl.style.opacity = '1';
+    _warningEl.style.pointerEvents = 'auto';
+    // Countdown
+    let secs = secondsLeft;
+    document.getElementById('inactivity-msg').innerHTML =
+      'Logging out in <strong>' + secs + 's</strong> due to inactivity';
+    const countInterval = setInterval(() => {
+      secs--;
+      const msgEl = document.getElementById('inactivity-msg');
+      if (msgEl) msgEl.innerHTML = 'Logging out in <strong>' + secs + 's</strong> due to inactivity';
+      if (secs <= 0) clearInterval(countInterval);
+    }, 1000);
+    _warningEl._countInterval = countInterval;
+  }
+
+  function _hideWarning() {
+    if (_warningEl) {
+      if (_warningEl._countInterval) clearInterval(_warningEl._countInterval);
+      _warningEl.style.opacity = '0';
+      _warningEl.style.pointerEvents = 'none';
+    }
+  }
+
+  function _doAutoLogout() {
+    _hideWarning();
+    // Clear session
+    sessionStorage.removeItem('gf_user');
+    sessionStorage.removeItem('gf_pass');
+    courseData = []; _transcriptLoaded = false; _hacUser = ''; _hacPass = '';
+    const btn = document.getElementById('btn-login');
+    btn.disabled = false; btn.textContent = 'Load my grades';
+    document.getElementById('hac-user').value = '';
+    document.getElementById('hac-pass').value = '';
+    showLogin();
+    // Show a brief "you were logged out" note on the login form
+    const errEl = document.getElementById('login-err');
+    document.getElementById('err-text').textContent = 'Logged out after 10 minutes of inactivity.';
+    errEl.classList.add('show');
+  }
+
+  function _resetInactivity() {
+    _hideWarning();
+    clearTimeout(_inactivityTimer);
+    clearTimeout(_warningTimer);
+    // Only set timers if user is actually logged in
+    if (!_hacUser || _hacUser === '__demo__') return;
+    // Warning fires 60s before logout
+    _warningTimer   = setTimeout(() => _showWarning(60), INACTIVITY_MS - 60000);
+    _inactivityTimer = setTimeout(_doAutoLogout, INACTIVITY_MS);
+  }
+
+  function _startInactivityWatch() {
+    ['mousemove','mousedown','keydown','touchstart','scroll','click'].forEach(evt =>
+      document.addEventListener(evt, _resetInactivity, { passive: true })
+    );
+    _resetInactivity();
+  }
+  function _stopInactivityWatch() {
+    clearTimeout(_inactivityTimer);
+    clearTimeout(_warningTimer);
+    _hideWarning();
+  }
+
+  /* ── Auto-restore session on page load/refresh ── */
+  (async function restoreSession() {
+    const user = sessionStorage.getItem('gf_user');
+    const pass = sessionStorage.getItem('gf_pass');
+    if (!user || !pass) return; // no saved session
+
+    // Show a subtle loading state on the login screen while we re-fetch
+    const btn = document.getElementById('btn-login');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spin"></span>Restoring session…';
+
+    try {
+      const res = await fetch('/api/grades', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: user, password: pass }),
+      });
+      if (!res.ok) { sessionStorage.removeItem('gf_user'); sessionStorage.removeItem('gf_pass'); btn.disabled = false; btn.textContent = 'Load my grades'; return; }
+      const data = await res.json();
+      const courses = (data.courses || []).map(c => ({
+        name: c.name || 'Unknown',
+        q1avg: num(c.q1avg), q2avg: num(c.q2avg), q3avg: num(c.q3avg), q4avg: num(c.q4avg ?? c.avg),
+      })).filter(c => c.name !== 'Unknown' && [c.q1avg,c.q2avg,c.q3avg,c.q4avg].some(v => v !== null));
+      if (!courses.length) { btn.disabled = false; btn.textContent = 'Load my grades'; return; }
+
+      _hacUser = user; _hacPass = pass;
+
+      let studentName = '';
+      const s = data.student || {};
+      if (s.name && s.name.trim()) {
+        const raw = s.name.trim();
+        if (raw.includes(',')) {
+          const [last, rest] = raw.split(',');
+          const first = (rest || '').trim().split(/\s+/)[0] || '';
+          const tc = w => w ? w.charAt(0).toUpperCase() + w.slice(1).toLowerCase() : '';
+          studentName = (tc(first) + ' ' + tc(last)).trim();
+        } else { studentName = raw; }
+      }
+      showDash(studentName, s.grade || '', courses);
+      _startInactivityWatch();
+    } catch (e) {
+      // Silently fail — just show login screen normally
+      sessionStorage.removeItem('gf_user');
+      sessionStorage.removeItem('gf_pass');
+      btn.disabled = false;
+      btn.textContent = 'Load my grades';
+    }
+  })();
 </script>
 </body>
 </html>
