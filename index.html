@@ -413,6 +413,7 @@
       document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
       btn.classList.add('active');
       document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+      sessionStorage.setItem('gf_tab', btn.dataset.tab);
     });
   });
 
@@ -423,6 +424,7 @@
     document.getElementById('tnav-grades').classList.toggle('active',     sec === 'grades');
     document.getElementById('tnav-transcript').classList.toggle('active', sec === 'transcript');
     if (sec === 'transcript' && !_transcriptLoaded) loadTranscript();
+    sessionStorage.setItem('gf_section', sec);
   }
 
   /* ── Render grades dashboard ── */
@@ -649,15 +651,21 @@
     document.getElementById('screen-login').classList.remove('hidden');
     document.getElementById('screen-dash').classList.remove('active');
   }
-  function showDash(name, level, courses) {
+  function showDash(name, level, courses, opts) {
+    opts = opts || {};
     document.getElementById('screen-login').classList.add('hidden');
     document.getElementById('screen-dash').classList.add('active');
-    showSection('grades');
     renderDash(name, courses);
+    // Restore section (grades or transcript) — default grades
+    const sec = opts.section || sessionStorage.getItem('gf_section') || 'grades';
+    showSection(sec);
+    // Restore active quarter tab — default q1
+    const tab = opts.tab || sessionStorage.getItem('gf_tab') || 'q1';
     document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
     document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
-    document.querySelector('[data-tab="q1"]').classList.add('active');
-    document.getElementById('tab-q1').classList.add('active');
+    const tabBtn = document.querySelector('[data-tab="' + tab + '"]');
+    if (tabBtn) { tabBtn.classList.add('active'); document.getElementById('tab-' + tab).classList.add('active'); }
+    else { document.querySelector('[data-tab="q1"]').classList.add('active'); document.getElementById('tab-q1').classList.add('active'); }
   }
 
   document.getElementById('btn-logout').addEventListener('click', () => {
@@ -665,6 +673,7 @@
     document.getElementById('hac-pass').value = '';
     courseData = []; _transcriptLoaded = false; _hacUser = ''; _hacPass = '';
     sessionStorage.removeItem('gf_user'); sessionStorage.removeItem('gf_pass');
+    sessionStorage.removeItem('gf_section'); sessionStorage.removeItem('gf_tab');
     _stopInactivityWatch();
     const btn = document.getElementById('btn-login');
     btn.disabled = false; btn.textContent = 'Load my grades';
@@ -708,7 +717,10 @@
       // Persist session so refresh doesn't log out
       sessionStorage.setItem('gf_user', user);
       sessionStorage.setItem('gf_pass', pass);
-      showDash(studentName, s.grade || '', courses);
+      showDash(studentName, s.grade || '', courses, {
+        section: sessionStorage.getItem('gf_section') || 'grades',
+        tab: sessionStorage.getItem('gf_tab') || 'q1',
+      });
       _startInactivityWatch();
     } catch (e) {
       document.getElementById('err-text').textContent = e.message || 'Something went wrong.';
@@ -857,7 +869,10 @@
           studentName = (tc(first) + ' ' + tc(last)).trim();
         } else { studentName = raw; }
       }
-      showDash(studentName, s.grade || '', courses);
+      showDash(studentName, s.grade || '', courses, {
+        section: sessionStorage.getItem('gf_section') || 'grades',
+        tab: sessionStorage.getItem('gf_tab') || 'q1',
+      });
       _startInactivityWatch();
     } catch (e) {
       // Silently fail — just show login screen normally
