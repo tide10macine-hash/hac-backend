@@ -171,25 +171,6 @@
 
     .footer-note { font-size:11.5px; color:var(--ink-4); text-align:center; line-height:1.8; }
 
-    /* ── Cumulative GPA section ── */
-    .cum-year-block { background:var(--surface); border:1px solid var(--border); border-radius:var(--r-lg); margin-bottom:1.25rem; overflow:hidden; }
-    .cum-year-header { display:flex; align-items:center; gap:10px; padding:13px 18px; border-bottom:1px solid var(--border); background:var(--surface-2); flex-wrap:wrap; }
-    .cum-year-label { font-family:'Syne',sans-serif; font-weight:700; font-size:14px; color:var(--ink); }
-    .cum-year-gpa { font-family:'DM Mono',monospace; font-size:13px; color:var(--accent); font-weight:500; margin-left:auto; }
-    .cum-table { width:100%; border-collapse:collapse; }
-    .cum-table th { text-align:left; font-size:10.5px; font-weight:600; letter-spacing:.07em; text-transform:uppercase; color:var(--ink-4); padding:9px 16px; border-bottom:1px solid var(--border); background:var(--surface-2); white-space:nowrap; }
-    .cum-table td { padding:11px 16px; font-size:13.5px; border-bottom:1px solid var(--border); vertical-align:middle; }
-    .cum-table tbody tr:last-child td { border-bottom:none; }
-    .cum-table tbody tr:hover td { background:var(--surface-2); }
-    .cum-course-name { font-weight:500; }
-    .cum-pts { font-family:'DM Mono',monospace; font-size:13px; font-weight:600; color:var(--ink-2); }
-    .cum-excluded { color:var(--ink-4); font-size:11.5px; font-style:italic; }
-    .cum-running-row { display:flex; align-items:center; gap:10px; font-size:12.5px; }
-    .cum-running-label { color:var(--ink-3); width:180px; flex-shrink:0; font-size:12px; }
-    .cum-running-bar-wrap { flex:1; background:var(--bg); border-radius:4px; height:7px; overflow:hidden; }
-    .cum-running-bar { height:100%; border-radius:4px; background:var(--accent); transition:width .4s; }
-    .cum-running-val { font-family:'DM Mono',monospace; font-size:12px; font-weight:600; color:var(--ink-2); width:40px; text-align:right; flex-shrink:0; }
-
     @media (max-width:560px) {
       .gpa-strip { grid-template-columns:1fr 1fr; }
       .gpa-tile.primary { grid-column:span 2; }
@@ -246,7 +227,6 @@
     <div class="topbar-nav">
       <button class="tnav-btn active" id="tnav-grades" onclick="showSection('grades')">Grades</button>
       <button class="tnav-btn" id="tnav-transcript" onclick="showSection('transcript')">Transcript</button>
-      <button class="tnav-btn" id="tnav-cumgpa" onclick="showSection('cumgpa')">Cumulative GPA</button>
     </div>
     <button class="btn-out" id="btn-logout">Sign out</button>
   </div>
@@ -357,47 +337,6 @@
       </p>
     </div>
   </div>
-
-  <!-- ── CUMULATIVE GPA SECTION ── -->
-  <div id="section-cumgpa" style="display:none">
-    <div class="dash-body">
-
-      <!-- Top tiles -->
-      <div class="gpa-strip">
-        <div class="gpa-tile primary">
-          <div class="gpa-tile-label">Cumulative GPA</div>
-          <div class="gpa-tile-val" id="cum-gpa-val">—</div>
-          <div class="gpa-tile-sub" id="cum-gpa-sub">All semesters combined</div>
-        </div>
-        <div class="gpa-tile">
-          <div class="gpa-tile-label">Total Semesters</div>
-          <div class="gpa-tile-val" id="cum-sem-count">—</div>
-          <div class="gpa-tile-sub">Each sem = 1 GPA unit</div>
-        </div>
-        <div class="gpa-tile">
-          <div class="gpa-tile-label">Total Points</div>
-          <div class="gpa-tile-val" id="cum-total-pts">—</div>
-          <div class="gpa-tile-sub">Sum of all sem GPA pts</div>
-        </div>
-      </div>
-
-      <!-- Year-by-year breakdown -->
-      <div id="cum-years-wrap">
-        <div class="tr-loading"><span class="sk-spin"></span>Load your transcript first to see cumulative GPA.</div>
-      </div>
-
-      <!-- Running total bar -->
-      <div id="cum-running-wrap" style="display:none">
-        <div style="margin-bottom:0.6rem;font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3)">GPA progression — semester by semester</div>
-        <div id="cum-running-list" style="display:flex;flex-direction:column;gap:6px;"></div>
-      </div>
-
-      <p class="footer-note" style="margin-top:1.75rem">
-        Each semester counts as 1 unit · Weight: AP max 6.0, Adv max 5.5, OL max 5.0<br>
-        Current year uses quarter averages when semester grades aren't final yet
-      </p>
-    </div>
-  </div>
 </div>
 
 <script>
@@ -482,10 +421,8 @@
   function showSection(sec) {
     document.getElementById('section-grades').style.display     = sec === 'grades'     ? '' : 'none';
     document.getElementById('section-transcript').style.display = sec === 'transcript' ? '' : 'none';
-    document.getElementById('section-cumgpa').style.display     = sec === 'cumgpa'     ? '' : 'none';
     document.getElementById('tnav-grades').classList.toggle('active',     sec === 'grades');
     document.getElementById('tnav-transcript').classList.toggle('active', sec === 'transcript');
-    document.getElementById('tnav-cumgpa').classList.toggle('active',     sec === 'cumgpa');
     if (sec === 'transcript' && !_transcriptLoaded) loadTranscript();
     sessionStorage.setItem('gf_section', sec);
   }
@@ -804,209 +741,6 @@
       { name:'AP Physics 1',          q1avg:98,q2avg:98,q3avg:97,q4avg:99 },
     ]);
   });
-  /* ── CUMULATIVE GPA CALCULATOR ── */
-  //
-  // Rules:
-  //   - Pull ALL past years from _transcriptData (sem1 + sem2 per course)
-  //   - For current year, use quarter averages: sem avg = (Q1+Q2)/2 and (Q3+Q4)/2
-  //     If only Q1 exists, sem1 = Q1 grade. If both Q1+Q2, sem1 = avg. Same for sem2.
-  //   - Each semester grade → GPA points using courseLevel (with overrides applied)
-  //   - Excluded courses (override === 'exclude') are skipped
-  //   - Accumulate all GPA point values, divide by count of semesters
-  //
-
-  function calcCumulativeGPA() {
-    const overrides = loadOverrides();
-
-    // ── Helper: grade → GPA pts using effective level ──────────────────
-    function gradeToPoints(grade, courseName) {
-      if (grade === null || grade === undefined || isNaN(grade)) return null;
-      const eff = overrides[courseName] || courseLevel(courseName);
-      if (eff === 'exclude') return null; // excluded
-      const max = eff === 'ap' ? 6.0 : eff === 'adv' ? 5.5 : 5.0;
-      const r   = Math.round(grade);
-      return Math.max(0, Math.round((max - (100 - r) * 0.1) * 10) / 10);
-    }
-
-    const allEntries = []; // { year, grade, courseName, sem, grade_val, pts }
-
-    // ── PAST YEARS from transcript ──────────────────────────────────────
-    if (_transcriptData && _transcriptData.years) {
-      _transcriptData.years.forEach(yr => {
-        // Determine if this is the current school year
-        const currentYear = new Date().getFullYear();
-        const currentMonth = new Date().getMonth() + 1; // 1-12
-        // School year "2025-2026" is current if we're in Aug 2025 – Jun 2026
-        const [startYr, endYr] = (yr.year || '').split('-').map(Number);
-        const isCurrentYear = (
-          (currentMonth >= 8 && currentYear === startYr) ||
-          (currentMonth < 8  && currentYear === endYr)
-        );
-
-        yr.courses.forEach(course => {
-          const eff = overrides[course.name] || courseLevel(course.name);
-          if (eff === 'exclude') return;
-
-          if (isCurrentYear) {
-            // Current year: skip — we use live quarter data below
-            return;
-          }
-
-          // Past year: use transcript sem grades directly
-          if (course.sem1 !== null) {
-            const pts = gradeToPoints(course.sem1, course.name);
-            if (pts !== null) allEntries.push({ year: yr.year, grade: yr.grade, courseName: course.name, sem: 'Sem 1', gradeVal: course.sem1, pts });
-          }
-          if (course.sem2 !== null) {
-            const pts = gradeToPoints(course.sem2, course.name);
-            if (pts !== null) allEntries.push({ year: yr.year, grade: yr.grade, courseName: course.name, sem: 'Sem 2', gradeVal: course.sem2, pts });
-          }
-        });
-      });
-    }
-
-    // ── CURRENT YEAR from live quarter grades ───────────────────────────
-    if (courseData && courseData.length) {
-      const currentYear = new Date().getFullYear();
-      const currentMonth = new Date().getMonth() + 1;
-      const startYr = currentMonth >= 8 ? currentYear : currentYear - 1;
-      const yearLabel = startYr + '-' + (startYr + 1);
-
-      courseData.forEach(course => {
-        const eff = overrides[course.name] || courseLevel(course.name);
-        if (eff === 'exclude') return;
-
-        // Sem 1 average: (Q1 + Q2) / 2, or just Q1 if Q2 not yet graded
-        const s1 = avg2(course.q1avg, course.q2avg);
-        if (s1 !== null) {
-          const pts = gradeToPoints(s1, course.name);
-          if (pts !== null) allEntries.push({ year: yearLabel, grade: 'Current', courseName: course.name, sem: 'Sem 1', gradeVal: s1, pts, isLive: true });
-        }
-
-        // Sem 2 average: (Q3 + Q4) / 2, or just Q3 if Q4 not yet graded
-        const s2 = avg2(course.q3avg, course.q4avg);
-        if (s2 !== null) {
-          const pts = gradeToPoints(s2, course.name);
-          if (pts !== null) allEntries.push({ year: yearLabel, grade: 'Current', courseName: course.name, sem: 'Sem 2', gradeVal: s2, pts, isLive: true });
-        }
-      });
-    }
-
-    if (!allEntries.length) return null;
-
-    const totalPts = allEntries.reduce((s, e) => s + e.pts, 0);
-    const cumGPA   = Math.round((totalPts / allEntries.length) * 10000) / 10000;
-
-    return { cumGPA, totalPts, semCount: allEntries.length, entries: allEntries };
-  }
-
-  function renderCumGPA() {
-    const result = calcCumulativeGPA();
-    const wrapEl = document.getElementById('cum-years-wrap');
-    const runWrap = document.getElementById('cum-running-wrap');
-
-    if (!result) {
-      wrapEl.innerHTML = '<div class="tr-loading">Load your grades and transcript first.</div>';
-      document.getElementById('cum-gpa-val').textContent  = '—';
-      document.getElementById('cum-sem-count').textContent = '—';
-      document.getElementById('cum-total-pts').textContent = '—';
-      runWrap.style.display = 'none';
-      return;
-    }
-
-    const { cumGPA, totalPts, semCount, entries } = result;
-
-    document.getElementById('cum-gpa-val').textContent   = cumGPA.toFixed(4);
-    document.getElementById('cum-sem-count').textContent = semCount;
-    document.getElementById('cum-total-pts').textContent = Math.round(totalPts * 100) / 100;
-    document.getElementById('cum-gpa-sub').textContent   = semCount + ' semester' + (semCount !== 1 ? 's' : '') + ' · sum ÷ count';
-
-    // Group entries by year
-    const byYear = {};
-    entries.forEach(e => {
-      if (!byYear[e.year]) byYear[e.year] = { grade: e.grade, courses: {} };
-      if (!byYear[e.year].courses[e.courseName]) byYear[e.year].courses[e.courseName] = { sem1: null, sem2: null };
-      if (e.sem === 'Sem 1') byYear[e.year].courses[e.courseName].sem1 = e;
-      if (e.sem === 'Sem 2') byYear[e.year].courses[e.courseName].sem2 = e;
-    });
-
-    wrapEl.innerHTML = '';
-
-    Object.entries(byYear).forEach(([year, data]) => {
-      // Year-level GPA (all sems in this year)
-      const yearEntries = entries.filter(e => e.year === year);
-      const yearGPAval  = yearEntries.reduce((s,e)=>s+e.pts,0) / yearEntries.length;
-
-      const block = document.createElement('div');
-      block.className = 'cum-year-block';
-
-      const rows = Object.entries(data.courses).map(([name, sems]) => {
-        const overrides = loadOverrides();
-        const eff = overrides[name] || courseLevel(name);
-        const max = eff==='ap'?'6.0':eff==='adv'?'5.5':'5.0';
-        const lvlBadge = eff==='ap' ? '<span class="c-badge badge-ap">AP</span>'
-                       : eff==='adv'? '<span class="c-badge badge-adv">Adv</span>' : '';
-        function semCell(s) {
-          if (!s) return '<td><span class="g-null">—</span></td><td><span class="g-null">—</span></td>';
-          return '<td>' + chip(s.gradeVal) + '</td><td><span class="cum-pts">' + s.pts.toFixed(1) + '</span><span class="pts-max"> /'+max+'</span></td>';
-        }
-        return '<tr>'
-          + '<td><span class="cum-course-name">' + name + lvlBadge + (sems.sem1&&sems.sem1.isLive ? '<span style="font-size:10px;color:var(--green);margin-left:5px">LIVE</span>':'') + '</span></td>'
-          + semCell(sems.sem1)
-          + semCell(sems.sem2)
-          + '</tr>';
-      }).join('');
-
-      block.innerHTML =
-        '<div class="cum-year-header">'
-          + '<span class="cum-year-label">' + year + '</span>'
-          + (data.grade && data.grade !== 'Current' ? '<span class="tr-grade-badge">Grade ' + data.grade + '</span>' : '')
-          + (data.grade === 'Current' ? '<span class="tr-grade-badge" style="background:var(--green-dim);color:var(--green)">Current Year</span>' : '')
-          + '<span class="cum-year-gpa">' + yearGPAval.toFixed(4) + ' avg</span>'
-        + '</div>'
-        + '<table class="cum-table">'
-          + '<thead><tr><th>Course</th><th>Sem 1 Grade</th><th>Sem 1 pts</th><th>Sem 2 Grade</th><th>Sem 2 pts</th></tr></thead>'
-          + '<tbody>' + rows + '</tbody>'
-        + '</table>';
-      wrapEl.appendChild(block);
-    });
-
-    // ── Running GPA bar chart ───────────────────────────────────────────
-    runWrap.style.display = 'block';
-    const listEl = document.getElementById('cum-running-list');
-    listEl.innerHTML = '';
-    let running = 0;
-    entries.forEach((e, i) => {
-      running = (running * i + e.pts) / (i + 1);
-      const shortName = e.courseName.length > 22 ? e.courseName.slice(0,20)+'…' : e.courseName;
-      const pct = Math.min(100, (running / 6.0) * 100).toFixed(1);
-      const row = document.createElement('div');
-      row.className = 'cum-running-row';
-      row.innerHTML =
-        '<span class="cum-running-label">' + shortName + ' ' + e.sem + '</span>'
-        + '<div class="cum-running-bar-wrap"><div class="cum-running-bar" style="width:' + pct + '%"></div></div>'
-        + '<span class="cum-running-val">' + running.toFixed(3) + '</span>';
-      listEl.appendChild(row);
-    });
-  }
-
-  /* ── Patch showSection to render cumGPA when tab opened ── */
-  const _origShowSection = showSection;
-  function showSection(sec) {
-    _origShowSection(sec);
-    if (sec === 'cumgpa') renderCumGPA();
-  }
-
-  /* ── Patch showDash to also refresh cumGPA if it's active ── */
-  const _origRenderDash = renderDash;
-  function renderDash(name, courses) {
-    _origRenderDash(name, courses);
-    const sec = sessionStorage.getItem('gf_section');
-    if (sec === 'cumgpa') renderCumGPA();
-  }
-
-  /* ── Patch showSection in topbar to include cumgpa ── */
-
   /* ── Inactivity auto-logout (10 min) ── */
   const INACTIVITY_MS = 10 * 60 * 1000; // 10 minutes
   let _inactivityTimer = null;
@@ -1151,3 +885,4 @@
 </script>
 </body>
 </html>
+
