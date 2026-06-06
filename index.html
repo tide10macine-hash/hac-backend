@@ -161,6 +161,7 @@
     .weight-select.w-ol  { background-color:var(--surface-2); color:var(--ink-3); border-color:var(--border-2); }
     .weight-select.w-adv { background-color:var(--accent-dim); color:#2440b0; border-color:rgba(61,90,255,.25); }
     .weight-select.w-ap  { background-color:var(--red-dim); color:#b91c1c; border-color:rgba(232,64,64,.25); }
+    .weight-select.w-double { background-color:#f3e8ff; color:#7c3aed; border-color:rgba(124,58,237,.25); }
     .weight-select:hover, .weight-select:focus { border-color:var(--accent); box-shadow:0 0 0 2px rgba(61,90,255,.1); }
     .weight-saved-dot {
       display:inline-block; width:5px; height:5px; border-radius:50%;
@@ -652,13 +653,14 @@
         const dotId = 'dot-' + c.name.replace(/[^a-z0-9]/gi,'_');
         let weightCell;
         if (isEditable) {
-          const sc = eff === 'adv' ? 'w-adv' : eff === 'ap' ? 'w-ap' : 'w-ol';
+          const sc = eff === 'adv' ? 'w-adv' : eff === 'ap' ? 'w-ap' : eff === 'double' ? 'w-double' : 'w-ol';
           const safeName = c.name.replace(/&/g,'&amp;').replace(/"/g,'&quot;');
           weightCell = '<td class="weight-cell">'
             + '<select class="weight-select ' + sc + '" data-course="' + safeName + '" title="Override weight">'
             + '<option value="auto"'   + (eff==='ol'      ?' selected':'') + '>On-Level</option>'
             + '<option value="adv"'    + (eff==='adv'     ?' selected':'') + '>Advanced</option>'
             + '<option value="ap"'     + (eff==='ap'      ?' selected':'') + '>AP</option>'
+            + '<option value="double"' + (eff==='double'  ?' selected':'') + '>Double-Weighted (×2)</option>'
             + '<option value="exclude"'+ (eff==='exclude' ?' selected':'') + '>Exclude from GPA</option>'
             + '</select><span class="weight-saved-dot" id="' + dotId + '"></span></td>';
         } else {
@@ -704,7 +706,7 @@
     const courseName = sel.dataset.course;
     const val = sel.value;
     saveOverride(courseName, val);
-    sel.className = 'weight-select ' + (val==='adv'?'w-adv':val==='ap'?'w-ap':'w-ol');
+    sel.className = 'weight-select ' + (val==='adv'?'w-adv':val==='ap'?'w-ap':val==='double'?'w-double':'w-ol');
     const dotId = 'dot-' + courseName.replace(/[^a-z0-9]/gi,'_');
     const dot = document.getElementById(dotId);
     if (dot) { dot.classList.add('show'); setTimeout(()=>dot.classList.remove('show'), 2000); }
@@ -818,6 +820,24 @@
   //   - Accumulate all GPA point values, divide by count of semesters
   //
 
+  // Courses that count as 2 semesters per semester taken
+  // Key is the CLEAN display name (what shows in transcript/grades)
+  const DOUBLE_WEIGHTED = new Set([
+    'AP Computer Science A',
+    'AP Computer Science 1 WL',
+    'AP Computer Science A (S1)',
+    'AP Computer Science A (S2)',
+  ]);
+
+  function courseUnits(courseName) {
+    // Check localStorage override first (override key 'double' means 2x)
+    const overrides = loadOverrides();
+    if (overrides[courseName] === 'double') return 2;
+    // Check built-in double-weighted set
+    if (DOUBLE_WEIGHTED.has(courseName)) return 2;
+    return 1;
+  }
+
   function calcCumulativeGPA() {
     const overrides = loadOverrides();
 
@@ -856,13 +876,14 @@
           }
 
           // Past year: use transcript sem grades directly
+          const units = courseUnits(course.name);
           if (course.sem1 !== null) {
             const pts = gradeToPoints(course.sem1, course.name);
-            if (pts !== null) allEntries.push({ year: yr.year, grade: yr.grade, courseName: course.name, sem: 'Sem 1', gradeVal: course.sem1, pts });
+            if (pts !== null) for (let u = 0; u < units; u++) allEntries.push({ year: yr.year, grade: yr.grade, courseName: course.name, sem: 'Sem 1', gradeVal: course.sem1, pts, units, unitIdx: u });
           }
           if (course.sem2 !== null) {
             const pts = gradeToPoints(course.sem2, course.name);
-            if (pts !== null) allEntries.push({ year: yr.year, grade: yr.grade, courseName: course.name, sem: 'Sem 2', gradeVal: course.sem2, pts });
+            if (pts !== null) for (let u = 0; u < units; u++) allEntries.push({ year: yr.year, grade: yr.grade, courseName: course.name, sem: 'Sem 2', gradeVal: course.sem2, pts, units, unitIdx: u });
           }
         });
       });
@@ -880,17 +901,18 @@
         if (eff === 'exclude') return;
 
         // Sem 1 average: (Q1 + Q2) / 2, or just Q1 if Q2 not yet graded
+        const units = courseUnits(course.name);
         const s1 = avg2(course.q1avg, course.q2avg);
         if (s1 !== null) {
           const pts = gradeToPoints(s1, course.name);
-          if (pts !== null) allEntries.push({ year: yearLabel, grade: 'Current', courseName: course.name, sem: 'Sem 1', gradeVal: s1, pts, isLive: true });
+          if (pts !== null) for (let u = 0; u < units; u++) allEntries.push({ year: yearLabel, grade: 'Current', courseName: course.name, sem: 'Sem 1', gradeVal: s1, pts, units, unitIdx: u, isLive: true });
         }
 
         // Sem 2 average: (Q3 + Q4) / 2, or just Q3 if Q4 not yet graded
         const s2 = avg2(course.q3avg, course.q4avg);
         if (s2 !== null) {
           const pts = gradeToPoints(s2, course.name);
-          if (pts !== null) allEntries.push({ year: yearLabel, grade: 'Current', courseName: course.name, sem: 'Sem 2', gradeVal: s2, pts, isLive: true });
+          if (pts !== null) for (let u = 0; u < units; u++) allEntries.push({ year: yearLabel, grade: 'Current', courseName: course.name, sem: 'Sem 2', gradeVal: s2, pts, units, unitIdx: u, isLive: true });
         }
       });
     }
@@ -946,15 +968,17 @@
       const rows = Object.entries(data.courses).map(([name, sems]) => {
         const overrides = loadOverrides();
         const eff = overrides[name] || courseLevel(name);
+        const units = courseUnits(name);
         const max = eff==='ap'?'6.0':eff==='adv'?'5.5':'5.0';
         const lvlBadge = eff==='ap' ? '<span class="c-badge badge-ap">AP</span>'
                        : eff==='adv'? '<span class="c-badge badge-adv">Adv</span>' : '';
+        const dblBadge = (units === 2) ? '<span class="c-badge" style="background:#f3e8ff;color:#7c3aed">×2</span>' : '';
         function semCell(s) {
           if (!s) return '<td><span class="g-null">—</span></td><td><span class="g-null">—</span></td>';
           return '<td>' + chip(s.gradeVal) + '</td><td><span class="cum-pts">' + s.pts.toFixed(1) + '</span><span class="pts-max"> /'+max+'</span></td>';
         }
         return '<tr>'
-          + '<td><span class="cum-course-name">' + name + lvlBadge + (sems.sem1&&sems.sem1.isLive ? '<span style="font-size:10px;color:var(--green);margin-left:5px">LIVE</span>':'') + '</span></td>'
+          + '<td><span class="cum-course-name">' + name + lvlBadge + dblBadge + (sems.sem1&&sems.sem1.isLive ? '<span style="font-size:10px;color:var(--green);margin-left:5px">LIVE</span>':'') + '</span></td>'
           + semCell(sems.sem1)
           + semCell(sems.sem2)
           + '</tr>';
