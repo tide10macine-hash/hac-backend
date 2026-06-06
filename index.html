@@ -658,24 +658,38 @@
       const tbody = yr.courses.map(c => {
         const nat = courseLevel(c.name);
         const eff = overrides[c.name] || nat;
-        // AP → exclude-only dropdown; Adv/OL → fixed label, no dropdown
+        // AP  → dropdown: AP | Exclude from GPA
+        // Adv → dropdown: Adv | Exclude from GPA
+        // OL  → full dropdown: On-Level | Advanced | AP | Exclude from GPA
         const lvlBadge = eff === 'ap'  ? '<span class="c-badge badge-ap">AP</span>'
                        : eff === 'adv' ? '<span class="c-badge badge-adv">Adv</span>' : '';
         const dotId = 'dot-' + c.name.replace(/[^a-z0-9]/gi,'_');
+        const safeName = c.name.replace(/&/g,'&amp;').replace(/"/g,'&quot;');
         let weightCell;
         if (nat === 'ap') {
-          const isExcluded = eff === 'exclude';
-          const sc = isExcluded ? 'w-ol' : 'w-ap';
-          const safeName = c.name.replace(/&/g,'&amp;').replace(/"/g,'&quot;');
+          const sc = eff === 'exclude' ? 'w-ol' : 'w-ap';
           weightCell = '<td class="weight-cell">'
-            + '<select class="weight-select ' + sc + '" data-course="' + safeName + '" title="Include or exclude from GPA">'
-            + '<option value="auto"'    + (!isExcluded ? ' selected' : '') + '>AP</option>'
-            + '<option value="exclude"' + (isExcluded  ? ' selected' : '') + '>Exclude from GPA</option>'
+            + '<select class="weight-select ' + sc + '" data-course="' + safeName + '" title="AP course weight">'
+            + '<option value="auto"'    + (eff!=='exclude' ? ' selected':'') + '>AP</option>'
+            + '<option value="exclude"' + (eff==='exclude' ? ' selected':'') + '>Exclude from GPA</option>'
+            + '</select><span class="weight-saved-dot" id="' + dotId + '"></span></td>';
+        } else if (nat === 'adv') {
+          const sc = eff === 'exclude' ? 'w-ol' : 'w-adv';
+          weightCell = '<td class="weight-cell">'
+            + '<select class="weight-select ' + sc + '" data-course="' + safeName + '" title="Advanced course weight">'
+            + '<option value="auto"'    + (eff!=='exclude' ? ' selected':'') + '>Advanced</option>'
+            + '<option value="exclude"' + (eff==='exclude' ? ' selected':'') + '>Exclude from GPA</option>'
             + '</select><span class="weight-saved-dot" id="' + dotId + '"></span></td>';
         } else {
-          // Adv or OL — just show fixed label
-          const lbl = nat === 'adv' ? 'Adv' : 'OL';
-          weightCell = '<td class="weight-cell"><span style="font-size:11px;color:var(--ink-4)">' + lbl + '</span></td>';
+          // On-Level — full options
+          const sc = eff==='adv'?'w-adv':eff==='ap'?'w-ap':'w-ol';
+          weightCell = '<td class="weight-cell">'
+            + '<select class="weight-select ' + sc + '" data-course="' + safeName + '" title="Override course weight">'
+            + '<option value="auto"'    + (eff==='ol'      ?' selected':'') + '>On-Level</option>'
+            + '<option value="adv"'     + (eff==='adv'     ?' selected':'') + '>Advanced</option>'
+            + '<option value="ap"'      + (eff==='ap'      ?' selected':'') + '>AP</option>'
+            + '<option value="exclude"' + (eff==='exclude' ?' selected':'') + '>Exclude from GPA</option>'
+            + '</select><span class="weight-saved-dot" id="' + dotId + '"></span></td>';
         }
         return '<tr>'
           + '<td><span class="tr-course-name">' + c.name + lvlBadge + '</span></td>'
