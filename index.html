@@ -487,6 +487,7 @@
     document.getElementById('tnav-transcript').classList.toggle('active', sec === 'transcript');
     document.getElementById('tnav-cumgpa').classList.toggle('active',     sec === 'cumgpa');
     if (sec === 'transcript' && !_transcriptLoaded) loadTranscript();
+    if (sec === 'cumgpa') setTimeout(renderCumGPA, 0);
     sessionStorage.setItem('gf_section', sec);
   }
 
@@ -519,6 +520,8 @@
 
     courses.forEach((c, i) => { const o = document.createElement('option'); o.value = i; o.textContent = c.name; sel.appendChild(o); });
     document.getElementById('wi-result').innerHTML = '';
+    // Refresh cumGPA if that tab is active
+    if (sessionStorage.getItem('gf_section') === 'cumgpa') setTimeout(renderCumGPA, 0);
   }
 
   /* ── What-if ── */
@@ -990,22 +993,6 @@
     });
   }
 
-  /* ── Patch showSection to render cumGPA when tab opened ── */
-  const _origShowSection = showSection;
-  function showSection(sec) {
-    _origShowSection(sec);
-    if (sec === 'cumgpa') renderCumGPA();
-  }
-
-  /* ── Patch showDash to also refresh cumGPA if it's active ── */
-  const _origRenderDash = renderDash;
-  function renderDash(name, courses) {
-    _origRenderDash(name, courses);
-    const sec = sessionStorage.getItem('gf_section');
-    if (sec === 'cumgpa') renderCumGPA();
-  }
-
-  /* ── Patch showSection in topbar to include cumgpa ── */
 
   /* ── Inactivity auto-logout (10 min) ── */
   const INACTIVITY_MS = 10 * 60 * 1000; // 10 minutes
