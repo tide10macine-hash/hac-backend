@@ -881,3 +881,52 @@ app.post('/api/assignments', async (req, res) => {
     res.status(status).json({ error: err.message });
   }
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DIAGNOSE: Assignments page structure
+// ─────────────────────────────────────────────────────────────────────────────
+app.post('/api/diagnose-assignments', async (req, res) => {
+  const { username, password } = req.body || {};
+  if (!username || !password) return res.status(400).json({ error: 'creds required' });
+  const client = makeClient();
+  try {
+    await login(client, username, password);
+    const getRes = await client.get(CW_URL, {
+      headers: { Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8' },
+    });
+    const $ = cheerio.load(getRes.data);
+
+    // All selects + their options
+    const selects = [];
+    $('select').each((_, el) => {
+      const name = $(el).attr('name') || '';
+      const id   = $(el).attr('id')   || '';
+      const opts = [];
+      $(el).find('option').each((__, o) => opts.push({ value: $(o).attr('value'), label: $(o).text().trim(), selected: !!$(o).attr('selected') }));
+      selects.push({ name, id, opts });
+    });
+
+    // All AssignmentClass blocks — first one in detail
+    const classes = [];
+    $('.AssignmentClass').each((i, el) => {
+      if (i > 2) return false;
+      const heading    = $(el).find('.sg-header-heading, a.sg-header-link').first().text().trim();
+      const subheading = $(el).find('.sg-header-subheading').first().text().trim();
+      // First 3 rows of any tables inside
+      const rows = [];
+      $(el).find('table tr').each((ri, row) => {
+        if (ri > 3) return false;
+        const cells = $(row).find('td,th').map((_, td) => $(td).text().trim().substring(0, 40)).get();
+        if (cells.length) rows.push(cells);
+      });
+      classes.push({ heading, subheading, rows });
+    });
+
+    // Raw HTML snippet of first AssignmentClass (500 chars)
+    const firstBlock = $('.AssignmentClass').first().html() || '';
+
+    res.json({ selects, classes, firstBlockSnippet: firstBlock.substring(0, 800) });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
