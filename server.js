@@ -370,6 +370,27 @@ app.post('/api/grades', async (req, res) => {
     });
     console.log('[periods available]', allPeriods.map(p => `"${p.label}"`).join(', '));
 
+    // Build quarterMap: map allPeriods dropdown options → q1/q2/q3/q4
+    // Same matching logic as parseAllQuartersFromPage header matching
+    const Q_PATTERNS = {
+      q1: [ /^1$/, /quarter\s*1\b/i, /\bmp\s*1\b/i, /\b1st\b/i, /nine.?weeks.?1\b/i, /six.?weeks.?1\b/i, /^q1$/i ],
+      q2: [ /^2$/, /quarter\s*2\b/i, /\bmp\s*2\b/i, /\b2nd\b/i, /nine.?weeks.?2\b/i, /six.?weeks.?2\b/i, /^q2$/i ],
+      q3: [ /^3$/, /quarter\s*3\b/i, /\bmp\s*3\b/i, /\b3rd\b/i, /nine.?weeks.?3\b/i, /six.?weeks.?3\b/i, /^q3$/i ],
+      q4: [ /^4$/, /quarter\s*4\b/i, /\bmp\s*4\b/i, /\b4th\b/i, /nine.?weeks.?4\b/i, /six.?weeks.?4\b/i, /^q4$/i ],
+    };
+    const quarterMap = {};
+    const usedQVals  = new Set();
+    for (const [q, pats] of Object.entries(Q_PATTERNS)) {
+      const match = allPeriods.find(p => !usedQVals.has(p.value) && pats.some(re => re.test(p.label.trim())));
+      if (match) { quarterMap[q] = match; usedQVals.add(match.value); }
+    }
+    // Positional fallback: assign remaining periods in order to unfilled quarters
+    const unmatched = allPeriods.filter(p => !usedQVals.has(p.value));
+    ['q1','q2','q3','q4'].filter(q => !quarterMap[q]).forEach((q, i) => {
+      if (unmatched[i]) { quarterMap[q] = unmatched[i]; usedQVals.add(unmatched[i].value); }
+    });
+    console.log('[quarterMap]', Object.entries(quarterMap).map(([q,p])=>`${q}="${p.label}"(${p.value})`).join(' '));
+
     // ── 2. Live grades (current in-progress quarter) ──────────────────────
     let liveGrades = new Map();
     try {
@@ -789,67 +810,69 @@ app.post('/api/assignments', async (req, res) => {
   try {
     await login(client, username, password);
 
-    let html;
-    if (period) {
-      // HAC Assignments page also has a marking period dropdown
-      // First GET to get the form fields and available options
-      const getRes = await client.get(CW_URL, {
-        headers: { Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8' },
-      });
-      const $init = cheerio.load(getRes.data);
+    // Always GET the assignments page first to get form state + dropdown name
+    const getRes = await client.get(CW_URL, {
+      headers: { Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8', Referer: CW_URL },
+    });
+    const $init = cheerio.load(getRes.data);
 
-      // Find the marking period dropdown on the assignments page
-      // It's usually named "ctl00$plnMain$ddlReportCardRuns" or similar
-      const ddlName = $init('select[name*="ddlReportCard"], select[name*="ddlMarking"], select[name*="ddlPeriod"]').attr('name')
-                   || 'ctl00$plnMain$ddlReportCardRuns';
+    // Find the marking period select — HAC uses various names across versions
+    const $ddl = $init('select').filter((_, el) => {
+      const name = ($init(el).attr('name') || '').toLowerCase();
+      return name.includes('reportcard') || name.includes('marking') || name.includes('period') || name.includes('run');
+    }).first();
+    const ddlName = $ddl.attr('name') || 'ctl00$plnMain$ddlReportCardRuns';
 
-      const selectedVal = $init(`select[name="${ddlName}"] option[selected]`).attr('value') || '';
-
-      // If already the right period, use current HTML
-      if (selectedVal === period) {
-        html = getRes.data;
-      } else {
-        // POST to switch period
-        const fields = {
-          __EVENTTARGET:        $init('input[name="__EVENTTARGET"]').val()        || 'ctl00$plnMain$ddlReportCardRuns',
-          __EVENTARGUMENT:      $init('input[name="__EVENTARGUMENT"]').val()      || '',
-          __VIEWSTATE:          $init('input[name="__VIEWSTATE"]').val()          || '',
-          __VIEWSTATEGENERATOR: $init('input[name="__VIEWSTATEGENERATOR"]').val() || '',
-          __EVENTVALIDATION:    $init('input[name="__EVENTVALIDATION"]').val()    || '',
-          [ddlName]: period,
-        };
-        const postRes = await client.post(CW_URL, new URLSearchParams(fields).toString(), {
-          headers: {
-            'Content-Type': 'application/x-www-form-urlencoded',
-            Referer: CW_URL,
-            Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-          },
-        });
-        html = postRes.data;
-      }
-    } else {
-      const getRes = await client.get(CW_URL, {
-        headers: { Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8' },
-      });
-      html = getRes.data;
-    }
-
-    // Also grab the available period options so the client can show a switcher
-    const $page = cheerio.load(html);
+    // Collect available period options
     const periods = [];
-    $page('select[name*="ddlReportCard"] option, select[name*="ddlMarking"] option, select[name*="ddlPeriod"] option').each((_, el) => {
+    $ddl.find('option').each((_, el) => {
       periods.push({
-        value:    $page(el).attr('value'),
-        label:    $page(el).text().trim(),
-        selected: !!$page(el).attr('selected'),
+        value:    $init(el).attr('value') || '',
+        label:    $init(el).text().trim(),
+        selected: !!$init(el).attr('selected'),
       });
     });
 
-    const classes = parseAssignments(html);
-    if (!classes.length)
-      return res.status(404).json({ error: 'No assignment data found.' });
+    const currentVal = $ddl.find('option[selected]').attr('value') || periods[periods.length - 1]?.value || '';
 
-    console.log('[assignments] period:', period || 'current', '| classes:', classes.length);
+    let html;
+    if (period && period !== currentVal) {
+      // POST to switch to requested period
+      const body = new URLSearchParams({
+        __EVENTTARGET:        ddlName,
+        __EVENTARGUMENT:      '',
+        __VIEWSTATE:          $init('input[name="__VIEWSTATE"]').val()          || '',
+        __VIEWSTATEGENERATOR: $init('input[name="__VIEWSTATEGENERATOR"]').val() || '',
+        __EVENTVALIDATION:    $init('input[name="__EVENTVALIDATION"]').val()    || '',
+        [ddlName]:            period,
+      });
+      const postRes = await client.post(CW_URL, body.toString(), {
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          Referer: CW_URL,
+          Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        },
+      });
+      html = postRes.data;
+    } else {
+      // Already on the right period (or no period specified — use current)
+      html = getRes.data;
+    }
+
+    const classes = parseAssignments(html);
+
+    // If no classes found after period switch, fall back to current page data
+    if (!classes.length && period && period !== currentVal) {
+      console.warn('[assignments] period switch returned no data, using current page');
+      const classes2 = parseAssignments(getRes.data);
+      return res.json({ periods, classes: classes2 });
+    }
+
+    if (!classes.length)
+      return res.status(404).json({ error: 'No assignment data found for this period.' });
+
+    console.log('[assignments] period:', period || 'current', '| ddl:', ddlName, '| classes:', classes.length,
+      '| sample:', classes[0]?.name, classes[0]?.assignments?.length, 'assignments');
     res.json({ periods, classes });
 
   } catch (err) {
