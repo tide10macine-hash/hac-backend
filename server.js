@@ -466,6 +466,8 @@ app.post('/api/grades', async (req, res) => {
       courses,
       _debug: {
         allPeriods,
+        quarterMap: Object.fromEntries(Object.entries(quarterMap).map(([q,p]) => [q, p.value])),
+        quarterLabels: Object.fromEntries(Object.entries(quarterMap).map(([q,p]) => [q, p.label])),
         rcRowCount: rcRows.size,
         mergedCount: courses.length,
         liveCount: liveGrades.size,
@@ -706,3 +708,153 @@ app.get('/api/health', (_, res) => res.json({ ok: true, ts: Date.now() }));
 
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => console.log(`GradeFlow server → http://localhost:${PORT}`));
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PARSE ASSIGNMENTS PAGE — all classes, all assignment rows
+//
+// HAC structure on Assignments.aspx:
+//   .AssignmentClass          — one block per class
+//     .sg-header-heading / a.sg-header-link  — class name
+//     .sg-header-subheading                  — "Period X  |  Teacher  |  Avg: XX.X"
+//     table.sg-asp-table-data-odd/even        — assignment rows
+//       tr  — one row per assignment
+//         td[0] Date Due
+//         td[1] Date Assigned
+//         td[2] Assignment name (may have <a>)
+//         td[3] Category
+//         td[4] Score
+//         td[5] Total Points
+// ─────────────────────────────────────────────────────────────────────────────
+function parseAssignments(html) {
+  const $ = cheerio.load(html);
+  const classes = [];
+
+  $('.AssignmentClass').each((_, classEl) => {
+    const $cls = $(classEl);
+
+    // Class name
+    const name = $cls.find('.sg-header-heading, a.sg-header-link').first().text().trim();
+    if (!name) return;
+
+    // Subheading: "Period 1  |  TEACHER NAME  |  Student Avg: 97.50"
+    const sub = $cls.find('.sg-header-subheading').first().text().trim();
+    const avgMatch = sub.match(/avg[:\s]*([\d.]+)/i);
+    const avg = avgMatch ? parseFloat(avgMatch[1]) : null;
+
+    // Assignments table rows
+    const assignments = [];
+    $cls.find('table tr').each((ri, row) => {
+      const $row = $(row);
+      // Skip header rows
+      if ($row.find('th').length > 0) return;
+      const cells = $row.find('td').map((_, td) => $(td).text().trim()).get();
+      if (cells.length < 5) return;
+
+      const dateDue      = cells[0] || '';
+      const dateAssigned = cells[1] || '';
+      const assignName   = cells[2] || '';
+      const category     = cells[3] || '';
+      const scoreRaw     = cells[4] || '';
+      const totalRaw     = cells[5] || '';
+
+      if (!assignName || assignName.toLowerCase() === 'assignment') return;
+
+      // Parse score — could be "100.0", "100.0 / 100.0", "INC", "--", etc.
+      let score = null, total = null;
+      const scoreNum = parseFloat(scoreRaw);
+      const totalNum = parseFloat(totalRaw);
+      if (!isNaN(scoreNum)) score = scoreNum;
+      if (!isNaN(totalNum)) total = totalNum;
+
+      assignments.push({ dateDue, dateAssigned, name: assignName, category, score, total });
+    });
+
+    classes.push({ name, avg, subheading: sub, assignments });
+  });
+
+  return classes;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// /api/assignments  — returns all assignments for the current/selected marking period
+// Query params: ?period=VALUE  (the dropdown value from RC runs, e.g. "1", "2" etc.)
+// Without period param: returns current classwork page as-is (current quarter)
+// ─────────────────────────────────────────────────────────────────────────────
+app.post('/api/assignments', async (req, res) => {
+  const { username, password, period } = req.body || {};
+  if (!username || !password)
+    return res.status(400).json({ error: 'Username and password required.' });
+
+  const client = makeClient();
+  try {
+    await login(client, username, password);
+
+    let html;
+    if (period) {
+      // HAC Assignments page also has a marking period dropdown
+      // First GET to get the form fields and available options
+      const getRes = await client.get(CW_URL, {
+        headers: { Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8' },
+      });
+      const $init = cheerio.load(getRes.data);
+
+      // Find the marking period dropdown on the assignments page
+      // It's usually named "ctl00$plnMain$ddlReportCardRuns" or similar
+      const ddlName = $init('select[name*="ddlReportCard"], select[name*="ddlMarking"], select[name*="ddlPeriod"]').attr('name')
+                   || 'ctl00$plnMain$ddlReportCardRuns';
+
+      const selectedVal = $init(`select[name="${ddlName}"] option[selected]`).attr('value') || '';
+
+      // If already the right period, use current HTML
+      if (selectedVal === period) {
+        html = getRes.data;
+      } else {
+        // POST to switch period
+        const fields = {
+          __EVENTTARGET:        $init('input[name="__EVENTTARGET"]').val()        || 'ctl00$plnMain$ddlReportCardRuns',
+          __EVENTARGUMENT:      $init('input[name="__EVENTARGUMENT"]').val()      || '',
+          __VIEWSTATE:          $init('input[name="__VIEWSTATE"]').val()          || '',
+          __VIEWSTATEGENERATOR: $init('input[name="__VIEWSTATEGENERATOR"]').val() || '',
+          __EVENTVALIDATION:    $init('input[name="__EVENTVALIDATION"]').val()    || '',
+          [ddlName]: period,
+        };
+        const postRes = await client.post(CW_URL, new URLSearchParams(fields).toString(), {
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            Referer: CW_URL,
+            Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          },
+        });
+        html = postRes.data;
+      }
+    } else {
+      const getRes = await client.get(CW_URL, {
+        headers: { Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8' },
+      });
+      html = getRes.data;
+    }
+
+    // Also grab the available period options so the client can show a switcher
+    const $page = cheerio.load(html);
+    const periods = [];
+    $page('select[name*="ddlReportCard"] option, select[name*="ddlMarking"] option, select[name*="ddlPeriod"] option').each((_, el) => {
+      periods.push({
+        value:    $page(el).attr('value'),
+        label:    $page(el).text().trim(),
+        selected: !!$page(el).attr('selected'),
+      });
+    });
+
+    const classes = parseAssignments(html);
+    if (!classes.length)
+      return res.status(404).json({ error: 'No assignment data found.' });
+
+    console.log('[assignments] period:', period || 'current', '| classes:', classes.length);
+    res.json({ periods, classes });
+
+  } catch (err) {
+    console.error('[/api/assignments]', err.message);
+    const status = err.message?.includes('username or password') ? 401 : 500;
+    res.status(status).json({ error: err.message });
+  }
+});
