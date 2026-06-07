@@ -189,6 +189,28 @@
     .cum-running-bar { height:100%; border-radius:4px; background:var(--accent); transition:width .4s; }
     .cum-running-val { font-family:'DM Mono',monospace; font-size:12px; font-weight:600; color:var(--ink-2); width:40px; text-align:right; flex-shrink:0; }
 
+    /* ── Assignment drawer ── */
+    .course-table tbody tr.c-row { cursor:pointer; }
+    .course-table tbody tr.c-row:hover td { background:var(--accent-dim); }
+    .course-table tbody tr.c-row.open td { background:var(--accent-dim); }
+    .c-row .expand-icon { display:inline-block; font-size:10px; color:var(--ink-4); margin-left:6px; transition:transform .2s; }
+    .c-row.open .expand-icon { transform:rotate(90deg); }
+    .assign-drawer { display:none; }
+    .assign-drawer.open { display:table-row; }
+    .assign-drawer td { padding:0 !important; border-bottom:1px solid var(--border) !important; }
+    .assign-inner { padding:0 12px 14px 28px; background:var(--surface-2); }
+    .assign-loading { padding:14px 28px; font-size:13px; color:var(--ink-4); background:var(--surface-2); }
+    .assign-table { width:100%; border-collapse:collapse; margin-top:10px; }
+    .assign-table th { font-size:10px; font-weight:600; letter-spacing:.07em; text-transform:uppercase; color:var(--ink-4); padding:6px 10px; border-bottom:1px solid var(--border); white-space:nowrap; text-align:left; }
+    .assign-table td { padding:8px 10px; font-size:12.5px; border-bottom:1px solid var(--border); vertical-align:middle; }
+    .assign-table tbody tr:last-child td { border-bottom:none; }
+    .assign-table tbody tr:hover td { background:rgba(61,90,255,0.04); }
+    .assign-name { font-weight:500; color:var(--ink); }
+    .assign-cat { font-size:11px; color:var(--ink-3); }
+    .score-chip { font-family:'DM Mono',monospace; font-size:12px; font-weight:600; padding:2px 8px; border-radius:5px; display:inline-block; }
+    .score-pct { font-size:10.5px; color:var(--ink-4); margin-left:4px; }
+    .assign-empty { padding:12px 10px; font-size:12.5px; color:var(--ink-4); text-align:center; }
+
     @media (max-width:560px) {
       .gpa-strip { grid-template-columns:1fr 1fr; }
       .gpa-tile.primary { grid-column:span 2; }
@@ -538,11 +560,11 @@
       courses.forEach((c, i) => tbody.insertAdjacentHTML('beforeend', rowFn(c, i)));
     }
 
-    fill('body-q1', c => '<tr><td><span class="c-name">' + c.name + badge(c.name) + '</span></td><td>' + chip(c.q1avg) + '</td><td>' + ptsCell(toPoints(c.q1avg, c.name), c.name) + '</td></tr>');
-    fill('body-q2', c => '<tr><td><span class="c-name">' + c.name + badge(c.name) + '</span></td><td>' + chip(c.q2avg) + '</td><td>' + ptsCell(toPoints(c.q2avg, c.name), c.name) + '</td></tr>');
+    fill('body-q1', (c,i) => courseRow(c, i, 'q1', [chip(c.q1avg), ptsCell(toPoints(c.q1avg, c.name), c.name)]));
+    fill('body-q2', (c,i) => courseRow(c, i, 'q2', [chip(c.q2avg), ptsCell(toPoints(c.q2avg, c.name), c.name)]));
     fill('body-s1', c => { const a = avg2(c.q1avg, c.q2avg); return '<tr><td><span class="c-name">' + c.name + badge(c.name) + '</span></td><td>' + chip(c.q1avg) + '</td><td>' + chip(c.q2avg) + '</td><td>' + chip(a) + '</td><td>' + ptsCell(toPoints(a, c.name), c.name) + '</td></tr>'; });
-    fill('body-q3', c => '<tr><td><span class="c-name">' + c.name + badge(c.name) + '</span></td><td>' + chip(c.q3avg) + '</td><td>' + ptsCell(toPoints(c.q3avg, c.name), c.name) + '</td></tr>');
-    fill('body-q4', c => '<tr><td><span class="c-name">' + c.name + badge(c.name) + '</span></td><td>' + chip(c.q4avg) + '</td><td>' + ptsCell(toPoints(c.q4avg, c.name), c.name) + '</td></tr>');
+    fill('body-q3', (c,i) => courseRow(c, i, 'q3', [chip(c.q3avg), ptsCell(toPoints(c.q3avg, c.name), c.name)]));
+    fill('body-q4', (c,i) => courseRow(c, i, 'q4', [chip(c.q4avg), ptsCell(toPoints(c.q4avg, c.name), c.name)]));
     fill('body-s2', c => { const a = avg2(c.q3avg, c.q4avg); return '<tr><td><span class="c-name">' + c.name + badge(c.name) + '</span></td><td>' + chip(c.q3avg) + '</td><td>' + chip(c.q4avg) + '</td><td>' + chip(a) + '</td><td>' + ptsCell(toPoints(a, c.name), c.name) + '</td></tr>'; });
     fill('body-all', c => '<tr><td><span class="c-name">' + c.name + badge(c.name) + '</span></td><td>' + chip(c.q1avg) + '</td><td>' + chip(c.q2avg) + '</td><td>' + chip(c.q3avg) + '</td><td>' + chip(c.q4avg) + '</td></tr>');
 
@@ -785,7 +807,7 @@
   document.getElementById('btn-logout').addEventListener('click', () => {
     document.getElementById('hac-user').value = '';
     document.getElementById('hac-pass').value = '';
-    courseData = []; _transcriptLoaded = false; _hacUser = ''; _hacPass = '';
+    courseData = []; _transcriptLoaded = false; _hacUser = ''; _hacPass = ''; _assignCache = {}; _quarterPeriods = {};
     sessionStorage.removeItem('gf_user'); sessionStorage.removeItem('gf_pass');
     sessionStorage.removeItem('gf_section'); sessionStorage.removeItem('gf_tab');
     _stopInactivityWatch();
@@ -817,6 +839,10 @@
         q1avg: num(c.q1avg), q2avg: num(c.q2avg), q3avg: num(c.q3avg), q4avg: num(c.q4avg ?? c.avg),
       })).filter(c => c.name !== 'Unknown' && [c.q1avg,c.q2avg,c.q3avg,c.q4avg].some(v => v !== null));
       if (!courses.length) throw new Error('No grade data found. Check credentials or try again.');
+      // Store quarter→period mapping for assignment fetching
+      if (data._debug && data._debug.quarterMap) {
+        _quarterPeriods = data._debug.quarterMap; // { q1: '1', q2: '2', ... }
+      }
       let studentName = '';
       const s = data.student || {};
       if (s.name && s.name.trim()) {
@@ -1064,6 +1090,120 @@
   }
 
 
+  /* ── Assignment drawer ── */
+  // Quarter → period mapping (populated when grades load)
+  let _quarterPeriods = {}; // { q1: '1', q2: '2', q3: '3', q4: '4' }
+  let _assignCache = {};    // { 'q1:CourseName': [...assignments] }
+
+  function courseRow(c, i, quarter, extraCells) {
+    const safeName = c.name.replace(/"/g, '&quot;');
+    const rowId    = 'row-' + quarter + '-' + i;
+    const drawerId = 'draw-' + quarter + '-' + i;
+    const extra    = extraCells.map(e => '<td>' + e + '</td>').join('');
+    return '<tr class="c-row" id="' + rowId + '" data-course="' + safeName + '" data-quarter="' + quarter + '" data-drawer="' + drawerId + '" onclick="toggleAssignDrawer(this)">'
+      + '<td><span class="c-name">' + c.name + badge(c.name) + '</span><span class="expand-icon">▶</span></td>'
+      + extra
+      + '</tr>'
+      + '<tr class="assign-drawer" id="' + drawerId + '">'
+      + '<td colspan="10"><div class="assign-loading" id="assign-inner-' + drawerId + '">Click to load assignments…</div></td>'
+      + '</tr>';
+  }
+
+  async function toggleAssignDrawer(rowEl) {
+    const drawerId  = rowEl.dataset.drawer;
+    const courseName = rowEl.dataset.course;
+    const quarter    = rowEl.dataset.quarter;
+    const drawerEl   = document.getElementById(drawerId);
+    const innerEl    = document.getElementById('assign-inner-' + drawerId);
+    const isOpen     = rowEl.classList.contains('open');
+
+    // Close any other open drawers in this tab
+    rowEl.closest('tbody').querySelectorAll('.c-row.open').forEach(r => {
+      if (r !== rowEl) {
+        r.classList.remove('open');
+        const d = document.getElementById(r.dataset.drawer);
+        if (d) d.classList.remove('open');
+      }
+    });
+
+    if (isOpen) {
+      rowEl.classList.remove('open');
+      drawerEl.classList.remove('open');
+      return;
+    }
+
+    rowEl.classList.add('open');
+    drawerEl.classList.add('open');
+
+    // Check cache first
+    const cacheKey = quarter + ':' + courseName;
+    if (_assignCache[cacheKey]) {
+      renderAssignments(innerEl, _assignCache[cacheKey], courseName);
+      return;
+    }
+
+    // Show loading
+    innerEl.className = 'assign-loading';
+    innerEl.innerHTML = '<span class="sk-spin"></span> Loading assignments…';
+
+    try {
+      // Map quarter to period value
+      const period = _quarterPeriods[quarter] || '';
+      const res = await fetch('/api/assignments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: _hacUser, password: _hacPass, period }),
+      });
+      if (!res.ok) throw new Error('Failed to load assignments');
+      const data = await res.json();
+
+      // Find this specific class in the response
+      const cls = data.classes.find(cl => cl.name === courseName || cl.name.toLowerCase() === courseName.toLowerCase());
+      const assignments = cls ? cls.assignments : [];
+      _assignCache[cacheKey] = assignments;
+      renderAssignments(innerEl, assignments, courseName);
+    } catch (e) {
+      innerEl.className = 'assign-loading';
+      innerEl.innerHTML = '<span style="color:var(--red)">' + e.message + '</span>';
+    }
+  }
+
+  function renderAssignments(containerEl, assignments, courseName) {
+    containerEl.className = 'assign-inner';
+    if (!assignments || !assignments.length) {
+      containerEl.innerHTML = '<div class="assign-empty">No assignment data available for this quarter.</div>';
+      return;
+    }
+
+    // Sort by date due descending
+    const sorted = [...assignments].sort((a, b) => new Date(b.dateDue) - new Date(a.dateDue));
+
+    const rows = sorted.map(a => {
+      const pct = (a.score !== null && a.total !== null && a.total > 0)
+        ? ((a.score / a.total) * 100).toFixed(1) + '%' : '';
+      const scoreClass = a.score === null ? 'g-null'
+        : a.total && (a.score / a.total) >= 0.9 ? 'grade-chip ga'
+        : a.total && (a.score / a.total) >= 0.8 ? 'grade-chip gb'
+        : a.total && (a.score / a.total) >= 0.7 ? 'grade-chip gc'
+        : 'grade-chip gd';
+      const scoreDisplay = a.score !== null
+        ? '<span class="' + scoreClass + '">' + a.score + '</span>' + (a.total ? ' <span style="color:var(--ink-4);font-size:11px">/ ' + a.total + '</span>' : '')
+        : '<span class="g-null">—</span>';
+      return '<tr>'
+        + '<td style="color:var(--ink-3);font-size:11.5px;white-space:nowrap">' + (a.dateDue || '—') + '</td>'
+        + '<td><span class="assign-name">' + a.name + '</span></td>'
+        + '<td><span class="assign-cat">' + (a.category || '') + '</span></td>'
+        + '<td style="text-align:right">' + scoreDisplay + (pct ? '<span class="score-pct">(' + pct + ')</span>' : '') + '</td>'
+        + '</tr>';
+    }).join('');
+
+    containerEl.innerHTML =
+      '<table class="assign-table">'
+      + '<thead><tr><th>Due</th><th>Assignment</th><th>Category</th><th style="text-align:right">Score</th></tr></thead>'
+      + '<tbody>' + rows + '</tbody>'
+      + '</table>';
+  }
+
   /* ── Inactivity auto-logout (10 min) ── */
   const INACTIVITY_MS = 10 * 60 * 1000; // 10 minutes
   let _inactivityTimer = null;
@@ -1119,7 +1259,7 @@
     // Clear session
     sessionStorage.removeItem('gf_user');
     sessionStorage.removeItem('gf_pass');
-    courseData = []; _transcriptLoaded = false; _hacUser = ''; _hacPass = '';
+    courseData = []; _transcriptLoaded = false; _hacUser = ''; _hacPass = ''; _assignCache = {}; _quarterPeriods = {};
     const btn = document.getElementById('btn-login');
     btn.disabled = false; btn.textContent = 'Load my grades';
     document.getElementById('hac-user').value = '';
