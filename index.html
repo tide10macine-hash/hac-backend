@@ -807,7 +807,7 @@
   document.getElementById('btn-logout').addEventListener('click', () => {
     document.getElementById('hac-user').value = '';
     document.getElementById('hac-pass').value = '';
-    courseData = []; _transcriptLoaded = false; _hacUser = ''; _hacPass = ''; _assignCache = {}; _quarterPeriods = {};
+    courseData = []; _transcriptLoaded = false; _hacUser = ''; _hacPass = ''; _assignCache = {}; _quarterPeriods = {}; _quarterLabels = {};
     sessionStorage.removeItem('gf_user'); sessionStorage.removeItem('gf_pass');
     sessionStorage.removeItem('gf_section'); sessionStorage.removeItem('gf_tab');
     _stopInactivityWatch();
@@ -841,7 +841,8 @@
       if (!courses.length) throw new Error('No grade data found. Check credentials or try again.');
       // Store quarter→period mapping for assignment fetching
       if (data._debug && data._debug.quarterMap) {
-        _quarterPeriods = data._debug.quarterMap; // { q1: '1', q2: '2', ... }
+        _quarterPeriods = data._debug.quarterMap;       // { q1: '1', q2: '2', ... } — period VALUES
+        _quarterLabels  = data._debug.quarterLabels || {}; // { q1: 'Quarter 1', ... } — labels
       }
       let studentName = '';
       const s = data.student || {};
@@ -1094,6 +1095,7 @@
   // Quarter → period mapping (populated when grades load)
   let _quarterPeriods = {}; // { q1: '1', q2: '2', q3: '3', q4: '4' }
   let _assignCache = {};    // { 'q1:CourseName': [...assignments] }
+  let _quarterLabels = {}; // { q1: 'Quarter 1', q2: '2', ... }
 
   function courseRow(c, i, quarter, extraCells) {
     const safeName = c.name.replace(/"/g, '&quot;');
@@ -1259,7 +1261,7 @@
     // Clear session
     sessionStorage.removeItem('gf_user');
     sessionStorage.removeItem('gf_pass');
-    courseData = []; _transcriptLoaded = false; _hacUser = ''; _hacPass = ''; _assignCache = {}; _quarterPeriods = {};
+    courseData = []; _transcriptLoaded = false; _hacUser = ''; _hacPass = ''; _assignCache = {}; _quarterPeriods = {}; _quarterLabels = {};
     const btn = document.getElementById('btn-login');
     btn.disabled = false; btn.textContent = 'Load my grades';
     document.getElementById('hac-user').value = '';
