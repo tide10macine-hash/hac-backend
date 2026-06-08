@@ -391,6 +391,25 @@ app.post('/api/grades', async (req, res) => {
     });
     console.log('[quarterMap]', Object.entries(quarterMap).map(([q,p])=>`${q}="${p.label}"(${p.value})`).join(' '));
 
+    // Fetch Assignments page dropdown to map quarter labels → assignment period values
+    // RC uses values like "1","2","3","4" but Assignments page uses "1-2026","2-2026" etc.
+    let assignPeriodMap = {}; // { '1': '1-2026', '2': '2-2026', ... } keyed by RC label
+    try {
+      const cwInitRes = await client.get(CW_URL, {
+        headers: { Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8' },
+      });
+      const $cw = cheerio.load(cwInitRes.data);
+      $cw('#plnMain_ddlReportCardRuns option').each((_, el) => {
+        const val   = $cw(el).attr('value') || '';
+        const lbl   = $cw(el).text().trim();
+        if (val && val !== 'ALL') assignPeriodMap[lbl] = val;
+      });
+      console.log('[assignPeriodMap]', JSON.stringify(assignPeriodMap));
+    } catch (e) {
+      console.error('[assignPeriodMap]', e.message);
+    }
+
+
     // ── 2. Live grades (current in-progress quarter) ──────────────────────
     let liveGrades = new Map();
     try {
@@ -487,8 +506,13 @@ app.post('/api/grades', async (req, res) => {
       courses,
       _debug: {
         allPeriods,
+        // RC quarter → RC period value (e.g. q1 → "1")
         quarterMap: Object.fromEntries(Object.entries(quarterMap).map(([q,p]) => [q, p.value])),
         quarterLabels: Object.fromEntries(Object.entries(quarterMap).map(([q,p]) => [q, p.label])),
+        // RC quarter → Assignments page period value (e.g. q1 → "1-2026")
+        assignQuarterMap: Object.fromEntries(
+          Object.entries(quarterMap).map(([q,p]) => [q, assignPeriodMap[p.label] || p.value])
+        ),
         rcRowCount: rcRows.size,
         mergedCount: courses.length,
         liveCount: liveGrades.size,
@@ -753,44 +777,50 @@ function parseAssignments(html) {
   $('.AssignmentClass').each((_, classEl) => {
     const $cls = $(classEl);
 
-    // Class name
-    const name = $cls.find('.sg-header-heading, a.sg-header-link').first().text().trim();
-    if (!name) return;
+    // Class name — from the sg-header-heading link (raw code + description)
+    // e.g. "ELA12200B - 2    English 2 Adv S2" — we clean it
+    const rawHeading = $cls.find('a.sg-header-heading, .sg-header-heading').first().text().trim();
+    if (!rawHeading) return;
+    const displayName = cleanName(rawHeading) || rawHeading;
 
-    // Subheading: "Period 1  |  TEACHER NAME  |  Student Avg: 97.50"
-    const sub = $cls.find('.sg-header-subheading').first().text().trim();
-    const avgMatch = sub.match(/avg[:\s]*([\d.]+)/i);
+    // Average from right-side header span
+    const avgText = $cls.find('.sg-header-heading.sg-right, [id*="lblHdrAverage"]').first().text().trim();
+    const avgMatch = avgText.match(/([\d.]+)/);
     const avg = avgMatch ? parseFloat(avgMatch[1]) : null;
 
-    // Assignments table rows
+    // Parse assignment rows — HAC table has 10 cols:
+    // 0:DateDue  1:DateAssigned  2:Assignment  3:Category  4:Score  5:TotalPoints
+    // 6:Weight   7:WeightedScore 8:WeightedTotal 9:Percentage
     const assignments = [];
     $cls.find('table tr').each((ri, row) => {
       const $row = $(row);
-      // Skip header rows
-      if ($row.find('th').length > 0) return;
+      if ($row.find('th').length > 0) return; // skip header
       const cells = $row.find('td').map((_, td) => $(td).text().trim()).get();
       if (cells.length < 5) return;
 
-      const dateDue      = cells[0] || '';
-      const dateAssigned = cells[1] || '';
-      const assignName   = cells[2] || '';
-      const category     = cells[3] || '';
-      const scoreRaw     = cells[4] || '';
-      const totalRaw     = cells[5] || '';
+      const dateDue    = (cells[0] || '').trim();
+      const assignName = (cells[2] || '').trim().replace(/\s+/g, ' ');
+      const category   = (cells[3] || '').trim();
+      const scoreRaw   = (cells[4] || '').trim();
+      const totalRaw   = (cells[5] || '').trim();
 
-      if (!assignName || assignName.toLowerCase() === 'assignment') return;
+      // Skip header-lookalike rows
+      if (!assignName || assignName === 'Assignment' || assignName === 'Date Due') return;
 
-      // Parse score — could be "100.0", "100.0 / 100.0", "INC", "--", etc.
-      let score = null, total = null;
-      const scoreNum = parseFloat(scoreRaw);
-      const totalNum = parseFloat(totalRaw);
-      if (!isNaN(scoreNum)) score = scoreNum;
-      if (!isNaN(totalNum)) total = totalNum;
+      const score = parseFloat(scoreRaw);
+      const total = parseFloat(totalRaw);
 
-      assignments.push({ dateDue, dateAssigned, name: assignName, category, score, total });
+      assignments.push({
+        dateDue,
+        name:     assignName,
+        category,
+        score:    isNaN(score) ? null : score,
+        total:    isNaN(total) ? null : total,
+        raw:      scoreRaw,   // keep raw in case it's "INC" or "--"
+      });
     });
 
-    classes.push({ name, avg, subheading: sub, assignments });
+    classes.push({ name: displayName, rawName: rawHeading, avg, assignments });
   });
 
   return classes;
@@ -810,22 +840,18 @@ app.post('/api/assignments', async (req, res) => {
   try {
     await login(client, username, password);
 
-    // Always GET the assignments page first to get form state + dropdown name
+    // GET the assignments page to get form fields + dropdown options
     const getRes = await client.get(CW_URL, {
       headers: { Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8', Referer: CW_URL },
     });
     const $init = cheerio.load(getRes.data);
 
-    // Find the marking period select — HAC uses various names across versions
-    const $ddl = $init('select').filter((_, el) => {
-      const name = ($init(el).attr('name') || '').toLowerCase();
-      return name.includes('reportcard') || name.includes('marking') || name.includes('period') || name.includes('run');
-    }).first();
-    const ddlName = $ddl.attr('name') || 'ctl00$plnMain$ddlReportCardRuns';
+    // The dropdown name is always ctl00$plnMain$ddlReportCardRuns
+    const ddlName = 'ctl00$plnMain$ddlReportCardRuns';
 
-    // Collect available period options
+    // Collect period options — values like "1-2026", "2-2026", "3-2026", "4-2026"
     const periods = [];
-    $ddl.find('option').each((_, el) => {
+    $init(`#plnMain_ddlReportCardRuns option`).each((_, el) => {
       periods.push({
         value:    $init(el).attr('value') || '',
         label:    $init(el).text().trim(),
@@ -833,18 +859,25 @@ app.post('/api/assignments', async (req, res) => {
       });
     });
 
-    const currentVal = $ddl.find('option[selected]').attr('value') || periods[periods.length - 1]?.value || '';
+    const currentVal = $init('#plnMain_ddlReportCardRuns option[selected]').attr('value')
+                    || periods.find(p => p.selected)?.value
+                    || periods[periods.length - 1]?.value || '';
+
+    console.log('[assignments] requested period:', period, '| current:', currentVal, '| available:', periods.map(p=>p.value).join(','));
 
     let html;
     if (period && period !== currentVal) {
-      // POST to switch to requested period
+      // POST to switch to the requested quarter period
       const body = new URLSearchParams({
-        __EVENTTARGET:        ddlName,
-        __EVENTARGUMENT:      '',
-        __VIEWSTATE:          $init('input[name="__VIEWSTATE"]').val()          || '',
-        __VIEWSTATEGENERATOR: $init('input[name="__VIEWSTATEGENERATOR"]').val() || '',
-        __EVENTVALIDATION:    $init('input[name="__EVENTVALIDATION"]').val()    || '',
-        [ddlName]:            period,
+        '__EVENTTARGET':                        ddlName,
+        '__EVENTARGUMENT':                      '',
+        '__VIEWSTATE':                          $init('input[name="__VIEWSTATE"]').val() || '',
+        '__VIEWSTATEGENERATOR':                 $init('input[name="__VIEWSTATEGENERATOR"]').val() || '',
+        '__EVENTVALIDATION':                    $init('input[name="__EVENTVALIDATION"]').val() || '',
+        [ddlName]:                              period,
+        'ctl00$plnMain$ddlClasses':             'ALL',
+        'ctl00$plnMain$ddlCompetencies':        'ALL',
+        'ctl00$plnMain$ddlOrderBy':             'Class',
       });
       const postRes = await client.post(CW_URL, body.toString(), {
         headers: {
@@ -854,25 +887,17 @@ app.post('/api/assignments', async (req, res) => {
         },
       });
       html = postRes.data;
+      console.log('[assignments] switched to period', period);
     } else {
-      // Already on the right period (or no period specified — use current)
       html = getRes.data;
     }
 
     const classes = parseAssignments(html);
-
-    // If no classes found after period switch, fall back to current page data
-    if (!classes.length && period && period !== currentVal) {
-      console.warn('[assignments] period switch returned no data, using current page');
-      const classes2 = parseAssignments(getRes.data);
-      return res.json({ periods, classes: classes2 });
-    }
+    console.log('[assignments] period:', period || currentVal, '| classes:', classes.length, '| assignments:', classes.reduce((s,c)=>s+c.assignments.length,0));
 
     if (!classes.length)
       return res.status(404).json({ error: 'No assignment data found for this period.' });
 
-    console.log('[assignments] period:', period || 'current', '| ddl:', ddlName, '| classes:', classes.length,
-      '| sample:', classes[0]?.name, classes[0]?.assignments?.length, 'assignments');
     res.json({ periods, classes });
 
   } catch (err) {
@@ -883,7 +908,7 @@ app.post('/api/assignments', async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// DIAGNOSE: Assignments page structure
+// DIAGNOSE: Assignments page structure page structure
 // ─────────────────────────────────────────────────────────────────────────────
 app.post('/api/diagnose-assignments', async (req, res) => {
   const { username, password } = req.body || {};
