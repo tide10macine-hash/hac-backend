@@ -807,7 +807,7 @@
   document.getElementById('btn-logout').addEventListener('click', () => {
     document.getElementById('hac-user').value = '';
     document.getElementById('hac-pass').value = '';
-    courseData = []; _transcriptLoaded = false; _hacUser = ''; _hacPass = ''; _assignCache = {}; _quarterPeriods = {}; _quarterLabels = {};
+    courseData = []; _transcriptLoaded = false; _hacUser = ''; _hacPass = ''; _assignCache = {}; _quarterPeriods = {}; _quarterLabels = {}; _assignQuarterMap = {};
     sessionStorage.removeItem('gf_user'); sessionStorage.removeItem('gf_pass');
     sessionStorage.removeItem('gf_section'); sessionStorage.removeItem('gf_tab');
     _stopInactivityWatch();
@@ -841,8 +841,9 @@
       if (!courses.length) throw new Error('No grade data found. Check credentials or try again.');
       // Store quarter→period mapping for assignment fetching
       if (data._debug && data._debug.quarterMap) {
-        _quarterPeriods = data._debug.quarterMap;       // { q1: '1', q2: '2', ... } — period VALUES
-        _quarterLabels  = data._debug.quarterLabels || {}; // { q1: 'Quarter 1', ... } — labels
+        _quarterPeriods    = data._debug.quarterMap;          // { q1: '1', ... } RC values
+        _quarterLabels     = data._debug.quarterLabels || {};
+        _assignQuarterMap  = data._debug.assignQuarterMap || {}; // { q1: '1-2026', ... } Assignments page values
       }
       let studentName = '';
       const s = data.student || {};
@@ -1096,6 +1097,7 @@
   let _quarterPeriods = {}; // { q1: '1', q2: '2', q3: '3', q4: '4' }
   let _assignCache = {};    // { 'q1:CourseName': [...assignments] }
   let _quarterLabels = {}; // { q1: 'Quarter 1', q2: '2', ... }
+  let _assignQuarterMap = {}; // { q1: '1-2026', q2: '2-2026', ... } for Assignments API
 
   function courseRow(c, i, quarter, extraCells) {
     const safeName = c.name.replace(/"/g, '&quot;');
@@ -1149,8 +1151,8 @@
     innerEl.innerHTML = '<span class="sk-spin"></span> Loading assignments…';
 
     try {
-      // Map quarter to period value
-      const period = _quarterPeriods[quarter] || '';
+      // Map quarter to Assignments-page period value (e.g. "1-2026" not "1")
+      const period = _assignQuarterMap[quarter] || _quarterPeriods[quarter] || '';
       const res = await fetch('/api/assignments', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1160,8 +1162,19 @@
       const data = await res.json();
 
       // Find this specific class in the response
-      const cls = data.classes.find(cl => cl.name === courseName || cl.name.toLowerCase() === courseName.toLowerCase());
+      // Match by cleaned display name OR raw heading containing the course name
+      const lowerCourse = courseName.toLowerCase().trim();
+      const cls = data.classes.find(cl => {
+        const lowerName = (cl.name || '').toLowerCase().trim();
+        const lowerRaw  = (cl.rawName || '').toLowerCase();
+        return lowerName === lowerCourse ||
+               lowerRaw.includes(lowerCourse) ||
+               lowerCourse.includes(lowerName) ||
+               // fuzzy: first 10 chars match (handles "English 2 Adv" vs "English 2 Adv S2")
+               (lowerCourse.length > 6 && lowerName.startsWith(lowerCourse.substring(0,10)));
+      });
       const assignments = cls ? cls.assignments : [];
+      console.log('[assign match]', courseName, '→', cls ? cls.name : 'NO MATCH', '| total:', data.classes.length, 'classes');
       _assignCache[cacheKey] = assignments;
       renderAssignments(innerEl, assignments, courseName);
     } catch (e) {
@@ -1261,7 +1274,7 @@
     // Clear session
     sessionStorage.removeItem('gf_user');
     sessionStorage.removeItem('gf_pass');
-    courseData = []; _transcriptLoaded = false; _hacUser = ''; _hacPass = ''; _assignCache = {}; _quarterPeriods = {}; _quarterLabels = {};
+    courseData = []; _transcriptLoaded = false; _hacUser = ''; _hacPass = ''; _assignCache = {}; _quarterPeriods = {}; _quarterLabels = {}; _assignQuarterMap = {};
     const btn = document.getElementById('btn-login');
     btn.disabled = false; btn.textContent = 'Load my grades';
     document.getElementById('hac-user').value = '';
