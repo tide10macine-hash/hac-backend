@@ -840,65 +840,59 @@ app.post('/api/assignments', async (req, res) => {
   try {
     await login(client, username, password);
 
-    // GET the assignments page to get form fields + dropdown options
+    // ── Step 1: GET the page to collect VIEWSTATE + available periods ──
     const getRes = await client.get(CW_URL, {
       headers: { Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8', Referer: CW_URL },
     });
-    const $init = cheerio.load(getRes.data);
+    const $g = cheerio.load(getRes.data);
 
-    // The dropdown name is always ctl00$plnMain$ddlReportCardRuns
-    const ddlName = 'ctl00$plnMain$ddlReportCardRuns';
-
-    // Collect period options — values like "1-2026", "2-2026", "3-2026", "4-2026"
     const periods = [];
-    $init(`#plnMain_ddlReportCardRuns option`).each((_, el) => {
-      periods.push({
-        value:    $init(el).attr('value') || '',
-        label:    $init(el).text().trim(),
-        selected: !!$init(el).attr('selected'),
-      });
+    $g('#plnMain_ddlReportCardRuns option').each((_, el) => {
+      const val = ($g(el).attr('value') || '').trim();
+      const lbl = $g(el).text().trim();
+      if (val && val !== 'ALL') periods.push({ value: val, label: lbl });
+    });
+    console.log('[assignments] available periods:', periods.map(p => `${p.label}=${p.value}`).join(', '));
+    console.log('[assignments] requested period:', period);
+
+    // ── Step 2: ALWAYS POST to set the desired period explicitly ──────
+    // Never rely on "already selected" — always POST so HAC switches the view
+    const targetPeriod = period || periods[periods.length - 1]?.value || '';
+
+    const postBody = new URLSearchParams({
+      '__EVENTTARGET':                 'ctl00$plnMain$ddlReportCardRuns',
+      '__EVENTARGUMENT':               '',
+      '__VIEWSTATE':                   $g('input[name="__VIEWSTATE"]').val() || '',
+      '__VIEWSTATEGENERATOR':          $g('input[name="__VIEWSTATEGENERATOR"]').val() || '',
+      '__EVENTVALIDATION':             $g('input[name="__EVENTVALIDATION"]').val() || '',
+      'ctl00$plnMain$ddlReportCardRuns': targetPeriod,
+      'ctl00$plnMain$ddlClasses':      'ALL',
+      'ctl00$plnMain$ddlCompetencies': 'ALL',
+      'ctl00$plnMain$ddlOrderBy':      'Class',
     });
 
-    const currentVal = $init('#plnMain_ddlReportCardRuns option[selected]').attr('value')
-                    || periods.find(p => p.selected)?.value
-                    || periods[periods.length - 1]?.value || '';
+    const postRes = await client.post(CW_URL, postBody.toString(), {
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        Referer: CW_URL,
+        Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+      },
+    });
 
-    console.log('[assignments] requested period:', period, '| current:', currentVal, '| available:', periods.map(p=>p.value).join(','));
+    // ── Step 3: Parse the returned page ───────────────────────────────
+    const classes = parseAssignments(postRes.data);
+    const totalAssign = classes.reduce((s, c) => s + c.assignments.length, 0);
+    console.log('[assignments] period:', targetPeriod, '| classes:', classes.length, '| assignments:', totalAssign);
 
-    let html;
-    if (period && period !== currentVal) {
-      // POST to switch to the requested quarter period
-      const body = new URLSearchParams({
-        '__EVENTTARGET':                        ddlName,
-        '__EVENTARGUMENT':                      '',
-        '__VIEWSTATE':                          $init('input[name="__VIEWSTATE"]').val() || '',
-        '__VIEWSTATEGENERATOR':                 $init('input[name="__VIEWSTATEGENERATOR"]').val() || '',
-        '__EVENTVALIDATION':                    $init('input[name="__EVENTVALIDATION"]').val() || '',
-        [ddlName]:                              period,
-        'ctl00$plnMain$ddlClasses':             'ALL',
-        'ctl00$plnMain$ddlCompetencies':        'ALL',
-        'ctl00$plnMain$ddlOrderBy':             'Class',
-      });
-      const postRes = await client.post(CW_URL, body.toString(), {
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-          Referer: CW_URL,
-          Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        },
-      });
-      html = postRes.data;
-      console.log('[assignments] switched to period', period);
-    } else {
-      html = getRes.data;
-    }
-
-    const classes = parseAssignments(html);
-    console.log('[assignments] period:', period || currentVal, '| classes:', classes.length, '| assignments:', classes.reduce((s,c)=>s+c.assignments.length,0));
+    // Sanity check: verify the page actually switched by checking selected option
+    const $post = cheerio.load(postRes.data);
+    const actualPeriod = $post('#plnMain_ddlReportCardRuns option[selected]').attr('value') || '?';
+    console.log('[assignments] page now shows period:', actualPeriod);
 
     if (!classes.length)
-      return res.status(404).json({ error: 'No assignment data found for this period.' });
+      return res.status(404).json({ error: 'No assignment data found for period ' + targetPeriod });
 
-    res.json({ periods, classes });
+    res.json({ periods, classes, actualPeriod });
 
   } catch (err) {
     console.error('[/api/assignments]', err.message);
