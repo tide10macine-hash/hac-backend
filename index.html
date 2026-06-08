@@ -1191,7 +1191,7 @@
   function renderAssignments(containerEl, assignments, courseName) {
     containerEl.className = 'assign-inner';
     if (!assignments || !assignments.length) {
-      containerEl.innerHTML = '<div class="assign-empty">No assignment data available for this quarter.</div>';
+      containerEl.innerHTML = '<div class="assign-empty" style="padding:16px;color:var(--ink-3);font-size:13px;text-align:center;">No assignments recorded for this quarter.</div>';
       return;
     }
 
