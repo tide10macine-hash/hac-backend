@@ -1159,7 +1159,11 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username: _hacUser, password: _hacPass, period }),
       });
-      if (!res.ok) throw new Error('Failed to load assignments');
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        console.error('[assignments] server error:', errData);
+        throw new Error(errData.error || 'Failed to load assignments');
+      }
       const data = await res.json();
 
       // Find this specific class in the response
