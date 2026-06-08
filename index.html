@@ -1139,9 +1139,9 @@
     rowEl.classList.add('open');
     drawerEl.classList.add('open');
 
-    // Check cache first
+    // Check cache first — key includes quarter so Q1/Q2/Q3/Q4 never share
     const cacheKey = quarter + ':' + courseName;
-    if (_assignCache[cacheKey]) {
+    if (_assignCache[cacheKey] !== undefined) {
       renderAssignments(innerEl, _assignCache[cacheKey], courseName);
       return;
     }
@@ -1153,6 +1153,7 @@
     try {
       // Map quarter to Assignments-page period value (e.g. "1-2026" not "1")
       const period = _assignQuarterMap[quarter] || _quarterPeriods[quarter] || '';
+      console.log('[assignments] quarter:', quarter, '→ period value:', period, '| assignQuarterMap:', _assignQuarterMap);
       const res = await fetch('/api/assignments', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1175,7 +1176,7 @@
       });
       const assignments = cls ? cls.assignments : [];
       console.log('[assign match]', courseName, '→', cls ? cls.name : 'NO MATCH', '| total:', data.classes.length, 'classes');
-      _assignCache[cacheKey] = assignments;
+      _assignCache[cacheKey] = assignments; // cache even if empty to avoid re-fetch
       renderAssignments(innerEl, assignments, courseName);
     } catch (e) {
       innerEl.className = 'assign-loading';
