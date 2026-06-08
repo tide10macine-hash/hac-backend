@@ -774,6 +774,15 @@ function parseAssignments(html) {
   const $ = cheerio.load(html);
   const classes = [];
 
+  // Debug: count assignment blocks
+  const blockCount = $('.AssignmentClass').length;
+  console.log('[parseAssignments] .AssignmentClass blocks found:', blockCount);
+  if (!blockCount) {
+    // Try to find any relevant structure
+    const anyBlocks = $('[class*="Assignment"], [class*="assignment"], [class*="Course"], [id*="rptAssig"]').length;
+    console.log('[parseAssignments] fallback selectors found:', anyBlocks);
+  }
+
   $('.AssignmentClass').each((_, classEl) => {
     const $cls = $(classEl);
 
@@ -840,62 +849,99 @@ app.post('/api/assignments', async (req, res) => {
   try {
     await login(client, username, password);
 
-    // ── Step 1: GET the page to collect VIEWSTATE + available periods ──
+    // Step 1: GET page fresh to collect VIEWSTATE
     const getRes = await client.get(CW_URL, {
-      headers: { Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8', Referer: CW_URL },
+      headers: {
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Referer': HAC_BASE,
+        'User-Agent': UA,
+      },
     });
     const $g = cheerio.load(getRes.data);
 
+    // Collect all available period options
     const periods = [];
     $g('#plnMain_ddlReportCardRuns option').each((_, el) => {
       const val = ($g(el).attr('value') || '').trim();
       const lbl = $g(el).text().trim();
-      if (val && val !== 'ALL') periods.push({ value: val, label: lbl });
+      periods.push({ value: val, label: lbl });
     });
-    console.log('[assignments] available periods:', periods.map(p => `${p.label}=${p.value}`).join(', '));
-    console.log('[assignments] requested period:', period);
+    console.log('[asgn] periods on page:', JSON.stringify(periods));
+    console.log('[asgn] requested period:', period);
 
-    // ── Step 2: ALWAYS POST to set the desired period explicitly ──────
-    // Never rely on "already selected" — always POST so HAC switches the view
-    const targetPeriod = period || periods[periods.length - 1]?.value || '';
+    // If no period specified or bad period, use the last non-ALL option
+    const validPeriods = periods.filter(p => p.value && p.value !== 'ALL');
+    const targetPeriod = (period && periods.find(p => p.value === period))
+      ? period
+      : validPeriods[validPeriods.length - 1]?.value || '';
 
-    const postBody = new URLSearchParams({
-      '__EVENTTARGET':                 'ctl00$plnMain$ddlReportCardRuns',
-      '__EVENTARGUMENT':               '',
-      '__VIEWSTATE':                   $g('input[name="__VIEWSTATE"]').val() || '',
-      '__VIEWSTATEGENERATOR':          $g('input[name="__VIEWSTATEGENERATOR"]').val() || '',
-      '__EVENTVALIDATION':             $g('input[name="__EVENTVALIDATION"]').val() || '',
-      'ctl00$plnMain$ddlReportCardRuns': targetPeriod,
-      'ctl00$plnMain$ddlClasses':      'ALL',
-      'ctl00$plnMain$ddlCompetencies': 'ALL',
-      'ctl00$plnMain$ddlOrderBy':      'Class',
+    console.log('[asgn] target period:', targetPeriod);
+
+    // Grab all form hidden fields
+    const viewstate          = $g('input[name="__VIEWSTATE"]').val() || '';
+    const viewstateGen       = $g('input[name="__VIEWSTATEGENERATOR"]').val() || '';
+    const eventValidation    = $g('input[name="__EVENTVALIDATION"]').val() || '';
+
+    console.log('[asgn] viewstate length:', viewstate.length, 'eventval length:', eventValidation.length);
+
+    // Step 2: POST to switch period — include ALL form fields HAC expects
+    const postBody = new URLSearchParams();
+    // Required hidden fields
+    postBody.set('__EVENTTARGET',   'ctl00$plnMain$ddlReportCardRuns');
+    postBody.set('__EVENTARGUMENT', '');
+    postBody.set('__VIEWSTATE',     viewstate);
+    postBody.set('__VIEWSTATEGENERATOR', viewstateGen);
+    postBody.set('__EVENTVALIDATION',    eventValidation);
+    // Dropdown values
+    postBody.set('ctl00$plnMain$ddlReportCardRuns', targetPeriod);
+    postBody.set('ctl00$plnMain$ddlClasses',        'ALL');
+    postBody.set('ctl00$plnMain$ddlCompetencies',   'ALL');
+    postBody.set('ctl00$plnMain$ddlOrderBy',        'Class');
+    // Also include any other hidden inputs on the page
+    $g('input[type="hidden"]').each((_, el) => {
+      const name = $g(el).attr('name');
+      const val  = $g(el).val() || '';
+      if (name && !postBody.has(name)) postBody.set(name, val);
     });
 
     const postRes = await client.post(CW_URL, postBody.toString(), {
       headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        Referer: CW_URL,
-        Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Content-Type':  'application/x-www-form-urlencoded',
+        'Referer':       CW_URL,
+        'Accept':        'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'User-Agent':    UA,
+        'Cache-Control': 'no-cache',
       },
+      maxRedirects: 10,
     });
 
-    // ── Step 3: Parse the returned page ───────────────────────────────
+    console.log('[asgn] POST status:', postRes.status, '| response url:', postRes.request?.res?.responseUrl || '?');
+
+    // Verify which period the page now shows
+    const $p = cheerio.load(postRes.data);
+    const nowPeriod = $p('#plnMain_ddlReportCardRuns option[selected]').attr('value') || 'unknown';
+    const classCount = $p('.AssignmentClass').length;
+    console.log('[asgn] page now on period:', nowPeriod, '| .AssignmentClass blocks:', classCount);
+
+    // Step 3: Parse
     const classes = parseAssignments(postRes.data);
-    const totalAssign = classes.reduce((s, c) => s + c.assignments.length, 0);
-    console.log('[assignments] period:', targetPeriod, '| classes:', classes.length, '| assignments:', totalAssign);
+    const totalA  = classes.reduce((s, c) => s + c.assignments.length, 0);
+    console.log('[asgn] parsed', classes.length, 'classes,', totalA, 'total assignments');
 
-    // Sanity check: verify the page actually switched by checking selected option
-    const $post = cheerio.load(postRes.data);
-    const actualPeriod = $post('#plnMain_ddlReportCardRuns option[selected]').attr('value') || '?';
-    console.log('[assignments] page now shows period:', actualPeriod);
+    if (!classes.length) {
+      // Return debug info so we can diagnose
+      const snippet = postRes.data.substring(0, 500);
+      console.log('[asgn] no classes found. Page snippet:', snippet);
+      return res.status(404).json({
+        error: 'No assignment data found',
+        debug: { targetPeriod, nowPeriod, classCount, viewstateLen: viewstate.length },
+      });
+    }
 
-    if (!classes.length)
-      return res.status(404).json({ error: 'No assignment data found for period ' + targetPeriod });
-
-    res.json({ periods, classes, actualPeriod });
+    res.json({ periods: validPeriods, classes, actualPeriod: nowPeriod });
 
   } catch (err) {
-    console.error('[/api/assignments]', err.message);
+    console.error('[/api/assignments] ERROR:', err.message, err.stack?.split('\n')[1]);
     const status = err.message?.includes('username or password') ? 401 : 500;
     res.status(status).json({ error: err.message });
   }
