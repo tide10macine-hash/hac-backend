@@ -811,53 +811,31 @@ function parseAssignments(html) {
   return classes;
 }
 
-// Fetch assignments for one period using a brand-new client (fresh login each time)
-async function fetchAssignmentsPeriod(username, password, periodValue) {
-  const client = makeClient();
-  await login(client, username, password);
-
-  const getRes = await client.get(CW_URL, {
-    headers: { Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8', Referer: HAC_BASE },
-  });
-  const $g = cheerio.load(getRes.data);
-
-  // Build POST body with ALL hidden fields from the page
-  const formData = {};
-  $g('input[type="hidden"]').each((_, el) => {
-    const name = $g(el).attr('name');
-    const val  = $g(el).val() || '';
-    if (name) formData[name] = val;
-  });
-  // Override the target fields
-  formData['__EVENTTARGET']                    = 'ctl00$plnMain$ddlReportCardRuns';
-  formData['__EVENTARGUMENT']                  = '';
-  formData['ctl00$plnMain$ddlReportCardRuns']  = periodValue;
-  formData['ctl00$plnMain$ddlClasses']         = 'ALL';
-  formData['ctl00$plnMain$ddlCompetencies']    = 'ALL';
-  formData['ctl00$plnMain$ddlOrderBy']         = 'Class';
-
-  const postRes = await client.post(CW_URL, new URLSearchParams(formData).toString(), {
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
-      'Referer':      CW_URL,
-      'Accept':       'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-    },
-  });
-
-  const $p = cheerio.load(postRes.data);
-  const blocks = $p('.AssignmentClass').length;
-  const selected = $p('#plnMain_ddlReportCardRuns').find('option').filter((_, el) => $p(el).attr('selected') !== undefined).attr('value') || '?';
-  console.log('[fetchPeriod] period=' + periodValue + ' selected=' + selected + ' blocks=' + blocks);
-
-  return parseAssignments(postRes.data);
-}
-
 function parseAssignmentsFromHtml(html) {
   return parseAssignments(html);
 }
 
+// Helper: build a period-switch POST body from a page's hidden fields
+function buildSwitchBody($page, periodValue) {
+  const formData = {};
+  $page('input[type="hidden"]').each((_, el) => {
+    const name = $page(el).attr('name');
+    const val  = $page(el).val() || '';
+    if (name) formData[name] = val;
+  });
+  formData['__EVENTTARGET']                   = 'ctl00$plnMain$ddlReportCardRuns';
+  formData['__EVENTARGUMENT']                 = '';
+  formData['ctl00$plnMain$ddlReportCardRuns'] = periodValue;
+  formData['ctl00$plnMain$ddlClasses']        = 'ALL';
+  formData['ctl00$plnMain$ddlCompetencies']   = 'ALL';
+  formData['ctl00$plnMain$ddlOrderBy']        = 'Class';
+  return new URLSearchParams(formData).toString();
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
-// /api/assignments — fetches all 4 quarters using separate logins per quarter
+// /api/assignments — fetches all quarters using a single session + sequential
+// POSTs.  Each POST reuses the __VIEWSTATE from the previous response so that
+// ASP.NET's form state tracks the period switch correctly.
 // ─────────────────────────────────────────────────────────────────────────────
 app.post('/api/assignments', async (req, res) => {
   const { username, password } = req.body || {};
@@ -865,14 +843,15 @@ app.post('/api/assignments', async (req, res) => {
     return res.status(400).json({ error: 'Username and password required.' });
 
   try {
-    // Step 1: login once to get the period list
-    const client0 = makeClient();
-    await login(client0, username, password);
-    const initRes = await client0.get(CW_URL, {
+    // Single session — one login, period switches via sequential POSTs
+    const client = makeClient();
+    await login(client, username, password);
+
+    let currentRes = await client.get(CW_URL, {
       headers: { Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8', Referer: HAC_BASE },
     });
-    const $init = cheerio.load(initRes.data);
 
+    const $init = cheerio.load(currentRes.data);
     const periodOpts = [];
     $init('#plnMain_ddlReportCardRuns option').each((_, el) => {
       const val = ($init(el).attr('value') || '').trim();
@@ -881,47 +860,87 @@ app.post('/api/assignments', async (req, res) => {
     });
     console.log('[asgn] periods:', periodOpts.map(p => p.label + '=' + p.value).join(', '));
 
-    // Step 2: also parse what's already loaded (current/default period)
-    const defaultClasses = parseAssignments(initRes.data);
-    const $d = cheerio.load(initRes.data);
-    const defaultSelected = $d('#plnMain_ddlReportCardRuns option').filter((_, el) => $d(el).attr('selected') !== undefined).attr('value') || '';
-    console.log('[asgn] default period=' + defaultSelected + ' classes=' + defaultClasses.length);
+    if (!periodOpts.length)
+      return res.status(500).json({ error: 'No grading periods found on assignments page.' });
 
-    // Step 3: fetch each period with a fresh login + GET + POST
+    // Detect the currently-displayed period (.val() resolves the selected option)
+    const defaultSelected = $init('#plnMain_ddlReportCardRuns').val() || periodOpts[0].value;
+    console.log('[asgn] default period=' + defaultSelected);
+
+    // allData: { periodValue → [ { name, rawName, assignments } ] }
     const allData = {};
 
-    // Use defaultClasses for the period that's already selected
-    if (defaultSelected) allData[defaultSelected] = defaultClasses;
-
-    // Fetch remaining periods
     for (const p of periodOpts) {
-      if (p.value === defaultSelected) continue; // already have it
-      await new Promise(r => setTimeout(r, 300));
+      if (p.value === defaultSelected && Object.keys(allData).length === 0) {
+        // Reuse the already-loaded page for the first/default period
+        allData[p.value] = parseAssignments(currentRes.data);
+        console.log('[asgn] period ' + p.label + '=' + p.value + ' (default): ' + allData[p.value].length + ' classes');
+        continue;
+      }
+
+      // Switch period using the SAME session, reading __VIEWSTATE from the
+      // most-recent response so ASP.NET's state machine stays in sync.
+      await new Promise(r => setTimeout(r, 400));
       try {
-        const classes = await fetchAssignmentsPeriod(username, password, p.value);
-        allData[p.value] = classes;
-        console.log('[asgn] period ' + p.label + '=' + p.value + ': ' + classes.length + ' classes, ' + classes.reduce((s,c) => s + c.assignments.length, 0) + ' assignments');
+        const $cur = cheerio.load(currentRes.data);
+        const postRes = await client.post(CW_URL, buildSwitchBody($cur, p.value), {
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'Referer':      CW_URL,
+            'Accept':       'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          },
+        });
+
+        // Advance currentRes so the next POST uses fresh __VIEWSTATE
+        currentRes = postRes;
+
+        const $p2 = cheerio.load(postRes.data);
+        const blocks   = $p2('.AssignmentClass').length;
+        const selected = $p2('#plnMain_ddlReportCardRuns').val() || '?';
+        console.log('[asgn] switched to ' + p.value + ' selected=' + selected + ' blocks=' + blocks);
+
+        allData[p.value] = parseAssignments(postRes.data);
+        console.log('[asgn] period ' + p.label + '=' + p.value + ': '
+          + allData[p.value].length + ' classes, '
+          + allData[p.value].reduce((s, c) => s + c.assignments.length, 0) + ' assignments');
       } catch (e) {
         console.error('[asgn] period ' + p.value + ' failed:', e.message);
         allData[p.value] = [];
       }
     }
 
-    console.log('[asgn] done. periods with data:', Object.entries(allData).map(([k,v]) => k + '=' + v.length + 'cls').join(', '));
+    console.log('[asgn] done. periods with data:', Object.entries(allData).map(([k, v]) => k + '=' + v.length + 'cls').join(', '));
 
-    // Build byClass: { cleanName: { sem: assignments } } keyed by period label number
-    // periodOpts labels are "1","2","3","4" → map to q1,q2,q3,q4
+    // Map period labels → q1/q2/q3/q4 using the same pattern matching as the
+    // grades endpoint, so the two endpoints agree on what "q1" means.
+    const Q_PATTERNS = {
+      q1: [ /^1$/, /quarter\s*1\b/i, /\bmp\s*1\b/i, /\b1st\b/i, /nine.?weeks.?1/i, /six.?weeks.?1/i, /^q1$/i ],
+      q2: [ /^2$/, /quarter\s*2\b/i, /\bmp\s*2\b/i, /\b2nd\b/i, /nine.?weeks.?2/i, /six.?weeks.?2/i, /^q2$/i ],
+      q3: [ /^3$/, /quarter\s*3\b/i, /\bmp\s*3\b/i, /\b3rd\b/i, /nine.?weeks.?3/i, /six.?weeks.?3/i, /^q3$/i ],
+      q4: [ /^4$/, /quarter\s*4\b/i, /\bmp\s*4\b/i, /\b4th\b/i, /nine.?weeks.?4/i, /six.?weeks.?4/i, /^q4$/i ],
+    };
+    const quarterMapping = {};
+    const usedVals = new Set();
+    for (const [q, pats] of Object.entries(Q_PATTERNS)) {
+      const match = periodOpts.find(p => !usedVals.has(p.value) && pats.some(re => re.test(p.label.trim())));
+      if (match) { quarterMapping[q] = match.value; usedVals.add(match.value); }
+    }
+    // Positional fallback for any unmatched quarters
+    periodOpts.filter(p => !usedVals.has(p.value)).forEach((p, i) => {
+      const q = ['q1', 'q2', 'q3', 'q4'][i];
+      if (q && !quarterMapping[q]) { quarterMapping[q] = p.value; usedVals.add(p.value); }
+    });
+    console.log('[asgn] quarterMapping:', JSON.stringify(quarterMapping));
+
+    // Build byClass: { cleanName: { q1: [...], q2: [...], ... } }
     const byClass = {};
-    periodOpts.forEach((p, idx) => {
-      const q = 'q' + (idx + 1);
-      const classes = allData[p.value] || [];
+    for (const [q, periodVal] of Object.entries(quarterMapping)) {
+      const classes = allData[periodVal] || [];
       classes.forEach(cls => {
         if (!byClass[cls.name]) byClass[cls.name] = {};
         byClass[cls.name][q] = cls.assignments;
-        if (cls.rawName) byClass[cls.rawName] = byClass[cls.rawName] || {};
-        if (cls.rawName) byClass[cls.rawName][q] = cls.assignments;
       });
-    });
+    }
 
     res.json({ periodOpts, byClass });
 
