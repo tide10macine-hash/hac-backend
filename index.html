@@ -1096,8 +1096,8 @@
   let _quarterPeriods   = {};
   let _quarterLabels    = {};
   let _assignQuarterMap = {};
-  let _assignByClass    = null;  // { CourseName: { sem1:[...], sem2:[...] } }
-  let _assignPromise    = null;  // in-flight fetch
+  let _assignByClass    = null;
+  let _assignPromise    = null;
 
   function courseRow(c, i, quarter, extraCells) {
     const safeName = c.name.replace(/"/g, '&quot;');
@@ -1124,7 +1124,8 @@
     .then(r => r.ok ? r.json() : r.json().then(e => Promise.reject(new Error(e.error || 'Failed'))))
     .then(data => {
       _assignByClass = data.byClass || {};
-      console.log('[asgn] loaded', Object.keys(_assignByClass).length, 'courses');
+      console.log('[asgn] loaded', Object.keys(_assignByClass).length, 'courses:', Object.keys(_assignByClass).slice(0,5));
+      _assignPromise = null;
       return _assignByClass;
     })
     .catch(e => { _assignPromise = null; return Promise.reject(e); });
@@ -1134,11 +1135,12 @@
   async function toggleAssignDrawer(rowEl) {
     const drawerId   = rowEl.dataset.drawer;
     const courseName = rowEl.dataset.course;
-    const quarter    = rowEl.dataset.quarter; // q1 q2 q3 q4
+    const quarter    = rowEl.dataset.quarter;
     const drawerEl   = document.getElementById(drawerId);
     const innerEl    = document.getElementById('ai-' + drawerId);
     const isOpen     = rowEl.classList.contains('open');
 
+    // Close other open drawers
     rowEl.closest('tbody').querySelectorAll('.c-row.open').forEach(r => {
       if (r !== rowEl) {
         r.classList.remove('open');
@@ -1147,54 +1149,66 @@
       }
     });
 
-    if (isOpen) { rowEl.classList.remove('open'); drawerEl.classList.remove('open'); return; }
+    if (isOpen) {
+      rowEl.classList.remove('open');
+      drawerEl.classList.remove('open');
+      return;
+    }
     rowEl.classList.add('open');
     drawerEl.classList.add('open');
     innerEl.className = 'assign-loading';
     innerEl.innerHTML = '<span class="sk-spin"></span> Loading assignments…';
 
     let byClass;
-    try { byClass = await getAssignments(); }
-    catch(e) {
+    try {
+      byClass = await getAssignments();
+    } catch(e) {
       innerEl.innerHTML = '<span style="color:var(--red);padding:12px;display:block">' + e.message + '</span>';
       return;
     }
 
-    // Find course data — exact or fuzzy match
+    // Find course — exact match first, then fuzzy
     let courseData = byClass[courseName];
     if (!courseData) {
       const lc = courseName.toLowerCase();
       const key = Object.keys(byClass).find(k => {
         const kl = k.toLowerCase();
-        return kl === lc || kl.startsWith(lc.substring(0,10)) || lc.startsWith(kl.substring(0,10));
+        return kl === lc
+          || kl.replace(/\s+s[12]\s*$/i,'') === lc
+          || lc.replace(/\s+s[12]\s*$/i,'') === kl
+          || (lc.length > 8 && kl.startsWith(lc.substring(0, 10)))
+          || (kl.length > 8 && lc.startsWith(kl.substring(0, 10)));
       });
-      if (key) courseData = byClass[key];
+      if (key) {
+        courseData = byClass[key];
+        console.log('[asgn] fuzzy match:', courseName, '->', key);
+      }
     }
 
     if (!courseData) {
-      innerEl.innerHTML = '<div style="padding:14px;color:var(--ink-3);font-size:13px">No assignment data found.</div>';
+      console.warn('[asgn] no match for:', courseName, '| available:', Object.keys(byClass).slice(0,8));
+      innerEl.innerHTML = '<div style="padding:14px;color:var(--ink-3);font-size:13px">No data found for this class.</div>';
       return;
     }
 
-    // Q1/Q2 → sem1 assignments, Q3/Q4 → sem2 assignments
-    const sem = (quarter === 'q1' || quarter === 'q2') ? 'sem1' : 'sem2';
-    const assignments = courseData[sem] || [];
-
+    // Get assignments for this specific quarter
+    const assignments = courseData[quarter] || [];
+    console.log('[asgn]', courseName, quarter, '->', assignments.length, 'assignments');
     renderAssignments(innerEl, assignments);
   }
 
   function renderAssignments(el, assignments) {
     el.className = 'assign-inner';
     if (!assignments.length) {
-      el.innerHTML = '<div style="padding:14px 16px;font-size:13px;color:var(--ink-4)">No assignments recorded.</div>';
+      el.innerHTML = '<div style="padding:14px 16px;font-size:13px;color:var(--ink-4)">No assignments recorded for this quarter.</div>';
       return;
     }
-    const sorted = [...assignments].sort((a,b) => new Date(b.dateDue) - new Date(a.dateDue));
+    const sorted = [...assignments].sort((a, b) => new Date(b.dateDue) - new Date(a.dateDue));
     const rows = sorted.map(a => {
       const ratio = (a.score !== null && a.total > 0) ? a.score / a.total : null;
       const cc = ratio === null ? 'g-null' : ratio >= .9 ? 'grade-chip ga' : ratio >= .8 ? 'grade-chip gb' : ratio >= .7 ? 'grade-chip gc' : 'grade-chip gd';
-      const pct = ratio !== null ? ' <span class="score-pct">(' + (ratio*100).toFixed(1) + '%)</span>' : '';
-      const sc  = a.score !== null
+      const pct = ratio !== null ? ' <span class="score-pct">(' + (ratio * 100).toFixed(1) + '%)</span>' : '';
+      const sc = a.score !== null
         ? '<span class="' + cc + '">' + a.score + '</span>' + (a.total ? ' <span style="color:var(--ink-4);font-size:11px">/ ' + a.total + '</span>' : '') + pct
         : '<span class="g-null">' + (a.raw || '—') + '</span>';
       return '<tr>'
@@ -1209,6 +1223,7 @@
       + '<tbody>' + rows + '</tbody></table>';
   }
 
+  /* ── Inactivity auto-logout (10 min) ── */
   /* ── Inactivity auto-logout (10 min) ── */
   /* ── Inactivity auto-logout (10 min) ── */
   /* ── Inactivity auto-logout (10 min) ── */
