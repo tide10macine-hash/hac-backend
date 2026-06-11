@@ -811,30 +811,36 @@ function parseAssignments(html) {
   return classes;
 }
 
-// Fetch the assignments page for a specific period value (e.g. "1-2026")
-// Does a fresh GET to get VIEWSTATE then POSTs to switch period
-async function fetchAssignmentsForPeriod(client, periodValue) {
-  // GET fresh page
+// Fetch ALL assignments in one shot using "ALL" runs value
+// Returns { q1: {CourseName: [assignments]}, q2: {...}, q3: {...}, q4: {...} }
+async function fetchAllAssignments(client) {
+  // GET page fresh
   const getRes = await client.get(CW_URL, {
     headers: { Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8', Referer: HAC_BASE },
   });
   const $g = cheerio.load(getRes.data);
 
-  const vs  = $g('input[name="__VIEWSTATE"]').val() || '';
-  const vsg = $g('input[name="__VIEWSTATEGENERATOR"]').val() || '';
-  const ev  = $g('input[name="__EVENTVALIDATION"]').val() || '';
-  console.log('[fetchPeriod] period=' + periodValue + ' vs.len=' + vs.length + ' ev.len=' + ev.length);
+  // Collect period options so we know which label maps to which quarter
+  const periodOpts = [];
+  $g('#plnMain_ddlReportCardRuns option').each((_, el) => {
+    const val = ($g(el).attr('value') || '').trim();
+    const lbl = $g(el).text().trim();
+    periodOpts.push({ value: val, label: lbl });
+  });
+  console.log('[asgn] period opts:', periodOpts.map(p=>p.label+'='+p.value).join(', '));
 
-  const body = new URLSearchParams();
-  body.set('__EVENTTARGET',                   'ctl00$plnMain$ddlReportCardRuns');
-  body.set('__EVENTARGUMENT',                 '');
-  body.set('__VIEWSTATE',                     vs);
-  body.set('__VIEWSTATEGENERATOR',            vsg);
-  body.set('__EVENTVALIDATION',               ev);
-  body.set('ctl00$plnMain$ddlReportCardRuns', periodValue);
-  body.set('ctl00$plnMain$ddlClasses',        'ALL');
-  body.set('ctl00$plnMain$ddlCompetencies',   'ALL');
-  body.set('ctl00$plnMain$ddlOrderBy',        'Class');
+  // POST to select ALL runs so we get every assignment at once
+  const body = new URLSearchParams({
+    '__EVENTTARGET':                   'ctl00$plnMain$ddlReportCardRuns',
+    '__EVENTARGUMENT':                 '',
+    '__VIEWSTATE':                     $g('input[name="__VIEWSTATE"]').val() || '',
+    '__VIEWSTATEGENERATOR':            $g('input[name="__VIEWSTATEGENERATOR"]').val() || '',
+    '__EVENTVALIDATION':               $g('input[name="__EVENTVALIDATION"]').val() || '',
+    'ctl00$plnMain$ddlReportCardRuns': 'ALL',
+    'ctl00$plnMain$ddlClasses':        'ALL',
+    'ctl00$plnMain$ddlCompetencies':   'ALL',
+    'ctl00$plnMain$ddlOrderBy':        'Class',
+  });
 
   const postRes = await client.post(CW_URL, body.toString(), {
     headers: {
@@ -844,27 +850,70 @@ async function fetchAssignmentsForPeriod(client, periodValue) {
     },
   });
 
-  // Check which period HAC actually returned
-  const $p = cheerio.load(postRes.data);
-  // HAC marks selected option with selected="selected" - check both ways
-  let nowPeriod = $p('#plnMain_ddlReportCardRuns option[selected]').attr('value');
-  if (!nowPeriod) {
-    // fallback: find option whose text/value matches
-    $p('#plnMain_ddlReportCardRuns option').each((_, el) => {
-      if ($p(el).attr('selected') || $p(el).attr('selected') === 'selected') {
-        nowPeriod = $p(el).attr('value');
-        return false;
-      }
-    });
-  }
-  const blocks = $p('.AssignmentClass').length;
-  console.log('[fetchPeriod] nowPeriod=' + (nowPeriod||'?') + ' blocks=' + blocks);
+  const $all = cheerio.load(postRes.data);
+  const blocks = $all('.AssignmentClass').length;
+  console.log('[asgn] ALL runs: got', blocks, 'class blocks');
 
-  return postRes.data;
+  // Parse all classes
+  // Each block heading is like "MTH45300A - 3    AP Calculus AB S1" or "MTH45300B ..."
+  // A = Semester 1 (Q1+Q2), B = Semester 2 (Q3+Q4)
+  // We don't know exact quarter boundaries, but since each class appears TWICE
+  // (once for S1, once for S2), we assign:
+  //   A-course assignments → split into Q1 / Q2 by whether they're in first or second half of sem
+  //   B-course assignments → split into Q3 / Q4
+  // Simplest: just return them bucketed as sem1 / sem2 keyed by CLEAN course name,
+  // then on the frontend Q1 tab and Q2 tab both show sem1 assignments,
+  // Q3 and Q4 show sem2 assignments.
+  // This matches what HAC actually stores — it doesn't track which exact quarter an assignment is in.
+
+  const byClass = {}; // { cleanName: { sem1: [...], sem2: [...] } }
+
+  $all('.AssignmentClass').each((_, classEl) => {
+    const $cls = $(classEl);
+    const rawHeading = $cls.find('a.sg-header-heading, .sg-header-heading').first().text().trim();
+    if (!rawHeading) return;
+
+    const displayName = cleanName(rawHeading) || rawHeading;
+
+    // Determine semester from course code suffix
+    const semMatch = rawHeading.match(/^[A-Z]{2,6}[\dA-Z]*?([AB])\s*[-\s]/i);
+    const sem = semMatch ? semMatch[1].toUpperCase() : null; // 'A'=sem1, 'B'=sem2
+
+    const assignments = [];
+    $cls.find('table tr').each((ri, row) => {
+      const $row = $(row);
+      if ($row.find('th').length > 0) return;
+      const cells = $row.find('td').map((_, td) => $(td).text().trim()).get();
+      if (cells.length < 5) return;
+      const dateDue    = (cells[0] || '').trim();
+      const assignName = (cells[2] || '').replace(/\s+/g, ' ').trim();
+      const category   = (cells[3] || '').trim();
+      const scoreRaw   = (cells[4] || '').trim();
+      const totalRaw   = (cells[5] || '').trim();
+      if (!assignName || assignName === 'Assignment' || assignName === 'Date Due') return;
+      const score = parseFloat(scoreRaw);
+      const total = parseFloat(totalRaw);
+      assignments.push({ dateDue, name: assignName, category,
+        score: isNaN(score) ? null : score,
+        total: isNaN(total) ? null : total,
+        raw: scoreRaw });
+    });
+
+    if (!byClass[displayName]) byClass[displayName] = { sem1: [], sem2: [] };
+    if (sem === 'B') {
+      byClass[displayName].sem2 = assignments;
+    } else {
+      // A or unknown → sem1
+      byClass[displayName].sem1 = assignments;
+    }
+  });
+
+  console.log('[asgn] parsed', Object.keys(byClass).length, 'unique courses');
+  return { byClass, periodOpts };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// /api/assignments — fetches ALL quarters' assignments in one call
+// /api/assignments
 // ─────────────────────────────────────────────────────────────────────────────
 app.post('/api/assignments', async (req, res) => {
   const { username, password } = req.body || {};
@@ -874,47 +923,18 @@ app.post('/api/assignments', async (req, res) => {
   const client = makeClient();
   try {
     await login(client, username, password);
+    const { byClass, periodOpts } = await fetchAllAssignments(client);
 
-    // GET assignments page to discover available periods
-    const initRes = await client.get(CW_URL, {
-      headers: { Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8', Referer: HAC_BASE },
-    });
-    const $init = cheerio.load(initRes.data);
+    if (!Object.keys(byClass).length)
+      return res.status(404).json({ error: 'No assignment data found.' });
 
-    const periods = [];
-    $init('#plnMain_ddlReportCardRuns option').each((_, el) => {
-      const val = ($init(el).attr('value') || '').trim();
-      const lbl = $init(el).text().trim();
-      if (val && val !== 'ALL') periods.push({ value: val, label: lbl });
-    });
-    console.log('[asgn] periods found:', periods.map(p=>p.label+'='+p.value).join(', '));
-
-    if (!periods.length) {
-      return res.status(404).json({ error: 'No marking periods found.' });
-    }
-
-    // Fetch each period independently (fresh GET + POST each time)
-    const allData = {};
-    for (const p of periods) {
-      await new Promise(r => setTimeout(r, 500));
-      try {
-        const html    = await fetchAssignmentsForPeriod(client, p.value);
-        const classes = parseAssignments(html);
-        allData[p.value] = classes;
-        console.log('[asgn] period ' + p.label + '(' + p.value + '): ' + classes.length + ' classes');
-      } catch (e) {
-        console.error('[asgn] period ' + p.value + ' error:', e.message);
-        allData[p.value] = [];
-      }
-    }
-
-    res.json({ periods, allData });
-
+    res.json({ byClass, periodOpts });
   } catch (err) {
     console.error('[/api/assignments]', err.message);
     res.status(500).json({ error: err.message });
   }
 });
+
 
 // ─────────────────────────────────────────────────────────────────────────────
 // DIAGNOSE: Assignments page structure page structure
