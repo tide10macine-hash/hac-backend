@@ -774,74 +774,100 @@ function parseAssignments(html) {
   const $ = cheerio.load(html);
   const classes = [];
 
-  // Debug: count assignment blocks
-  const blockCount = $('.AssignmentClass').length;
-  console.log('[parseAssignments] .AssignmentClass blocks found:', blockCount);
-  if (!blockCount) {
-    // Try to find any relevant structure
-    const anyBlocks = $('[class*="Assignment"], [class*="assignment"], [class*="Course"], [id*="rptAssig"]').length;
-    console.log('[parseAssignments] fallback selectors found:', anyBlocks);
-  }
-
   $('.AssignmentClass').each((_, classEl) => {
     const $cls = $(classEl);
-
-    // Class name — from the sg-header-heading link (raw code + description)
-    // e.g. "ELA12200B - 2    English 2 Adv S2" — we clean it
     const rawHeading = $cls.find('a.sg-header-heading, .sg-header-heading').first().text().trim();
     if (!rawHeading) return;
     const displayName = cleanName(rawHeading) || rawHeading;
 
-    // Average from right-side header span
-    const avgText = $cls.find('.sg-header-heading.sg-right, [id*="lblHdrAverage"]').first().text().trim();
-    const avgMatch = avgText.match(/([\d.]+)/);
-    const avg = avgMatch ? parseFloat(avgMatch[1]) : null;
-
-    // Parse assignment rows — HAC table has 10 cols:
-    // 0:DateDue  1:DateAssigned  2:Assignment  3:Category  4:Score  5:TotalPoints
-    // 6:Weight   7:WeightedScore 8:WeightedTotal 9:Percentage
     const assignments = [];
     $cls.find('table tr').each((ri, row) => {
       const $row = $(row);
-      if ($row.find('th').length > 0) return; // skip header
+      if ($row.find('th').length > 0) return;
       const cells = $row.find('td').map((_, td) => $(td).text().trim()).get();
       if (cells.length < 5) return;
-
       const dateDue    = (cells[0] || '').trim();
-      const assignName = (cells[2] || '').trim().replace(/\s+/g, ' ');
+      const assignName = (cells[2] || '').replace(/\s+/g, ' ').trim();
       const category   = (cells[3] || '').trim();
       const scoreRaw   = (cells[4] || '').trim();
       const totalRaw   = (cells[5] || '').trim();
-
-      // Skip header-lookalike rows
       if (!assignName || assignName === 'Assignment' || assignName === 'Date Due') return;
-
       const score = parseFloat(scoreRaw);
       const total = parseFloat(totalRaw);
-
       assignments.push({
         dateDue,
-        name:     assignName,
+        name:   assignName,
         category,
-        score:    isNaN(score) ? null : score,
-        total:    isNaN(total) ? null : total,
-        raw:      scoreRaw,   // keep raw in case it's "INC" or "--"
+        score:  isNaN(score) ? null : score,
+        total:  isNaN(total) ? null : total,
+        raw:    scoreRaw,
       });
     });
 
-    classes.push({ name: displayName, rawName: rawHeading, avg, assignments });
+    classes.push({ name: displayName, rawName: rawHeading, assignments });
   });
 
+  console.log('[parseAssignments] blocks:', classes.length, 'assignments:', classes.reduce((s,c)=>s+c.assignments.length,0));
   return classes;
 }
 
+// Fetch the assignments page for a specific period value (e.g. "1-2026")
+// Does a fresh GET to get VIEWSTATE then POSTs to switch period
+async function fetchAssignmentsForPeriod(client, periodValue) {
+  // GET fresh page
+  const getRes = await client.get(CW_URL, {
+    headers: { Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8', Referer: HAC_BASE },
+  });
+  const $g = cheerio.load(getRes.data);
+
+  const vs  = $g('input[name="__VIEWSTATE"]').val() || '';
+  const vsg = $g('input[name="__VIEWSTATEGENERATOR"]').val() || '';
+  const ev  = $g('input[name="__EVENTVALIDATION"]').val() || '';
+  console.log('[fetchPeriod] period=' + periodValue + ' vs.len=' + vs.length + ' ev.len=' + ev.length);
+
+  const body = new URLSearchParams();
+  body.set('__EVENTTARGET',                   'ctl00$plnMain$ddlReportCardRuns');
+  body.set('__EVENTARGUMENT',                 '');
+  body.set('__VIEWSTATE',                     vs);
+  body.set('__VIEWSTATEGENERATOR',            vsg);
+  body.set('__EVENTVALIDATION',               ev);
+  body.set('ctl00$plnMain$ddlReportCardRuns', periodValue);
+  body.set('ctl00$plnMain$ddlClasses',        'ALL');
+  body.set('ctl00$plnMain$ddlCompetencies',   'ALL');
+  body.set('ctl00$plnMain$ddlOrderBy',        'Class');
+
+  const postRes = await client.post(CW_URL, body.toString(), {
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'Referer':      CW_URL,
+      'Accept':       'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+    },
+  });
+
+  // Check which period HAC actually returned
+  const $p = cheerio.load(postRes.data);
+  // HAC marks selected option with selected="selected" - check both ways
+  let nowPeriod = $p('#plnMain_ddlReportCardRuns option[selected]').attr('value');
+  if (!nowPeriod) {
+    // fallback: find option whose text/value matches
+    $p('#plnMain_ddlReportCardRuns option').each((_, el) => {
+      if ($p(el).attr('selected') || $p(el).attr('selected') === 'selected') {
+        nowPeriod = $p(el).attr('value');
+        return false;
+      }
+    });
+  }
+  const blocks = $p('.AssignmentClass').length;
+  console.log('[fetchPeriod] nowPeriod=' + (nowPeriod||'?') + ' blocks=' + blocks);
+
+  return postRes.data;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
-// /api/assignments  — returns all assignments for the current/selected marking period
-// Query params: ?period=VALUE  (the dropdown value from RC runs, e.g. "1", "2" etc.)
-// Without period param: returns current classwork page as-is (current quarter)
+// /api/assignments — fetches ALL quarters' assignments in one call
 // ─────────────────────────────────────────────────────────────────────────────
 app.post('/api/assignments', async (req, res) => {
-  const { username, password, period } = req.body || {};
+  const { username, password } = req.body || {};
   if (!username || !password)
     return res.status(400).json({ error: 'Username and password required.' });
 
@@ -849,88 +875,43 @@ app.post('/api/assignments', async (req, res) => {
   try {
     await login(client, username, password);
 
-    // Helper: fetch one period's assignments by POSTing the dropdown change
-    async function fetchOnePeriod(periodValue, previousHtml) {
-      const $prev = cheerio.load(previousHtml);
-      const body  = new URLSearchParams({
-        '__EVENTTARGET':                     'ctl00$plnMain$ddlReportCardRuns',
-        '__EVENTARGUMENT':                   '',
-        '__VIEWSTATE':                       $prev('input[name="__VIEWSTATE"]').val()          || '',
-        '__VIEWSTATEGENERATOR':              $prev('input[name="__VIEWSTATEGENERATOR"]').val()  || '',
-        '__EVENTVALIDATION':                 $prev('input[name="__EVENTVALIDATION"]').val()     || '',
-        'ctl00$plnMain$ddlReportCardRuns':   periodValue,
-        'ctl00$plnMain$ddlClasses':          'ALL',
-        'ctl00$plnMain$ddlCompetencies':     'ALL',
-        'ctl00$plnMain$ddlOrderBy':          'Class',
-      });
-      const res = await client.post(CW_URL, body.toString(), {
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-          'Referer':      CW_URL,
-          'Accept':       'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-          'User-Agent':   UA,
-        },
-      });
-      return res.data;
-    }
-
-    // Step 1: GET the assignments page fresh
+    // GET assignments page to discover available periods
     const initRes = await client.get(CW_URL, {
-      headers: {
-        'Accept':   'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        'Referer':  HAC_BASE,
-        'User-Agent': UA,
-      },
+      headers: { Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8', Referer: HAC_BASE },
     });
-    let currentHtml = initRes.data;
+    const $init = cheerio.load(initRes.data);
 
-    // Collect available period options from the page
-    const $init = cheerio.load(currentHtml);
-    const allPeriodOpts = [];
+    const periods = [];
     $init('#plnMain_ddlReportCardRuns option').each((_, el) => {
       const val = ($init(el).attr('value') || '').trim();
       const lbl = $init(el).text().trim();
-      if (val && val !== 'ALL') allPeriodOpts.push({ value: val, label: lbl });
+      if (val && val !== 'ALL') periods.push({ value: val, label: lbl });
     });
-    console.log('[asgn] all period options:', allPeriodOpts.map(p => p.label + '=' + p.value).join(', '));
+    console.log('[asgn] periods found:', periods.map(p=>p.label+'='+p.value).join(', '));
 
-    if (!allPeriodOpts.length) {
-      return res.status(404).json({ error: 'Could not find marking period options on assignments page.' });
+    if (!periods.length) {
+      return res.status(404).json({ error: 'No marking periods found.' });
     }
 
-    // Step 2: If a specific period is requested, just fetch that one
-    // and return it (used when user clicks a class in a specific quarter)
-    if (period) {
-      const target = allPeriodOpts.find(p => p.value === period);
-      if (!target) {
-        return res.status(400).json({ error: 'Period ' + period + ' not found. Available: ' + allPeriodOpts.map(p=>p.value).join(', ') });
+    // Fetch each period independently (fresh GET + POST each time)
+    const allData = {};
+    for (const p of periods) {
+      await new Promise(r => setTimeout(r, 500));
+      try {
+        const html    = await fetchAssignmentsForPeriod(client, p.value);
+        const classes = parseAssignments(html);
+        allData[p.value] = classes;
+        console.log('[asgn] period ' + p.label + '(' + p.value + '): ' + classes.length + ' classes');
+      } catch (e) {
+        console.error('[asgn] period ' + p.value + ' error:', e.message);
+        allData[p.value] = [];
       }
-
-      // Fetch from currently loaded page (re-use VIEWSTATE)
-      const html = await fetchOnePeriod(period, currentHtml);
-      const $check = cheerio.load(html);
-      const nowPeriod = $check('#plnMain_ddlReportCardRuns option[selected]').attr('value') || '?';
-      const blockCount = $check('.AssignmentClass').length;
-      console.log('[asgn] after POST: nowPeriod=' + nowPeriod + ' blocks=' + blockCount);
-
-      const classes = parseAssignments(html);
-      console.log('[asgn] period=' + period + ' classes=' + classes.length + ' assignments=' + classes.reduce((s,c)=>s+c.assignments.length,0));
-
-      if (!classes.length) {
-        return res.status(404).json({
-          error: 'No assignments found for period ' + period,
-          debug: { nowPeriod, blockCount, requested: period, available: allPeriodOpts }
-        });
-      }
-      return res.json({ classes, actualPeriod: nowPeriod });
     }
 
-    // No specific period — return current page's assignments
-    const classes = parseAssignments(currentHtml);
-    res.json({ classes, actualPeriod: 'current' });
+    res.json({ periods, allData });
 
   } catch (err) {
-    console.error('[/api/assignments] ERROR:', err.message);
+    console.error('[/api/assignments]', err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -981,5 +962,70 @@ app.post('/api/diagnose-assignments', async (req, res) => {
     res.json({ selects, classes, firstBlockSnippet: firstBlock.substring(0, 800) });
   } catch (e) {
     res.status(500).json({ error: e.message });
+  }
+});
+
+// ── DIAGNOSE: test period switch ─────────────────────────────────────
+app.post('/api/diagnose-switch', async (req, res) => {
+  const { username, password } = req.body || {};
+  if (!username || !password) return res.status(400).json({ error: 'creds required' });
+  const client = makeClient();
+  try {
+    await login(client, username, password);
+    const initRes = await client.get(CW_URL, {
+      headers: { Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8', Referer: HAC_BASE },
+    });
+    const $i = cheerio.load(initRes.data);
+
+    const vs   = $i('input[name="__VIEWSTATE"]').val() || '';
+    const vsg  = $i('input[name="__VIEWSTATEGENERATOR"]').val() || '';
+    const ev   = $i('input[name="__EVENTVALIDATION"]').val() || '';
+    const selectedNow = $i('#plnMain_ddlReportCardRuns option[selected]').attr('value') || '?';
+    const blocks0 = $i('.AssignmentClass').length;
+
+    // Now POST to switch to period "1-2026"
+    const body = new URLSearchParams({
+      '__EVENTTARGET': 'ctl00$plnMain$ddlReportCardRuns',
+      '__EVENTARGUMENT': '',
+      '__VIEWSTATE': vs,
+      '__VIEWSTATEGENERATOR': vsg,
+      '__EVENTVALIDATION': ev,
+      'ctl00$plnMain$ddlReportCardRuns': '1-2026',
+      'ctl00$plnMain$ddlClasses': 'ALL',
+      'ctl00$plnMain$ddlCompetencies': 'ALL',
+      'ctl00$plnMain$ddlOrderBy': 'Class',
+    });
+
+    const postRes = await client.post(CW_URL, body.toString(), {
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        Referer: CW_URL,
+        Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+      },
+    });
+
+    const $p = cheerio.load(postRes.data);
+    const selectedAfter = $p('#plnMain_ddlReportCardRuns option[selected]').attr('value') || '?';
+    const blocks1 = $p('.AssignmentClass').length;
+
+    // First class heading and first 2 assignment rows
+    const firstClass = $p('.AssignmentClass').first();
+    const heading = firstClass.find('a.sg-header-heading').first().text().trim();
+    const rows = [];
+    firstClass.find('table tr').each((ri, row) => {
+      if (ri > 3) return false;
+      rows.push($p(row).find('td,th').map((_, td) => $p(td).text().trim().substring(0,30)).get());
+    });
+
+    // Raw HTML of the select after POST
+    const selectHtml = $p('#plnMain_ddlReportCardRuns').toString().substring(0, 400);
+
+    res.json({
+      beforeSwitch: { selectedNow, blocks0, vsLen: vs.length, evLen: ev.length },
+      afterSwitch:  { selectedAfter, blocks1, heading, rows, selectHtml },
+      redirectUrl:  postRes.request?.res?.responseUrl || '?',
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message, stack: e.stack?.split('\n').slice(0,3) });
   }
 });
