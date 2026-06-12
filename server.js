@@ -391,107 +391,32 @@ app.post('/api/grades', async (req, res) => {
     });
     console.log('[quarterMap]', Object.entries(quarterMap).map(([q,p])=>`${q}="${p.label}"(${p.value})`).join(' '));
 
-    // ── 2. Fetch ALL assignments for ALL quarters using same session ────────
-    // Same client = same login = switching periods actually works
-    let assignPeriodMap = {};
-    const assignmentsByQ = { q1: [], q2: [], q3: [], q4: [] };
-    let liveGrades = new Map();
+    // Fetch Assignments page dropdown to map quarter labels → assignment period values
+    // RC uses values like "1","2","3","4" but Assignments page uses "1-2026","2-2026" etc.
+    let assignPeriodMap = {}; // { '1': '1-2026', '2': '2-2026', ... } keyed by RC label
     try {
-      // GET assignments page with this authenticated session
       const cwInitRes = await client.get(CW_URL, {
-        headers: { Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8', Referer: RC_URL },
+        headers: { Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8' },
       });
       const $cw = cheerio.load(cwInitRes.data);
-
-      // Map RC quarter labels → assignment period values
-      const cwPeriods = [];
       $cw('#plnMain_ddlReportCardRuns option').each((_, el) => {
-        const val = ($cw(el).attr('value') || '').trim();
-        const lbl = $cw(el).text().trim();
-        if (val && val !== 'ALL') { cwPeriods.push({ val, lbl }); assignPeriodMap[lbl] = val; }
+        const val   = $cw(el).attr('value') || '';
+        const lbl   = $cw(el).text().trim();
+        if (val && val !== 'ALL') assignPeriodMap[lbl] = val;
       });
       console.log('[assignPeriodMap]', JSON.stringify(assignPeriodMap));
+    } catch (e) {
+      console.error('[assignPeriodMap]', e.message);
+    }
 
-      // Parse live grades from default page
-      liveGrades = parseLiveGrades(cwInitRes.data);
+
+    // ── 2. Live grades (current in-progress quarter) ──────────────────────
+    let liveGrades = new Map();
+    try {
+      liveGrades = parseLiveGrades((await client.get(CW_URL)).data);
       console.log('[live]', liveGrades.size, 'classes');
-
-      // Determine which period is currently shown (default)
-      const $cwInit2 = cheerio.load(cwInitRes.data);
-      let defaultPeriodVal = '';
-      $cwInit2('#plnMain_ddlReportCardRuns option').each((_, el) => {
-        if ($cwInit2(el).attr('selected') !== undefined && $cwInit2(el).attr('selected') !== false) {
-          defaultPeriodVal = ($cwInit2(el).attr('value') || '').trim();
-        }
-      });
-      // Fallback: last option is usually Q4 (current)
-      if (!defaultPeriodVal) defaultPeriodVal = cwPeriods[cwPeriods.length - 1]?.val || '';
-      console.log('[assign] default period on page:', defaultPeriodVal);
-
-      // Map by POSITION — cwPeriods are always in order: [0]=Q1, [1]=Q2, [2]=Q3, [3]=Q4
-      // This is the same approach used for RC columns and is always reliable
-      const periodValToQ = {};
-      cwPeriods.forEach((p, i) => { periodValToQ[p.val] = 'q' + (i + 1); });
-      console.log('[assign] periodValToQ:', JSON.stringify(periodValToQ));
-
-      // Parse default period assignments
-      if (defaultPeriodVal && periodValToQ[defaultPeriodVal]) {
-        const defQ = periodValToQ[defaultPeriodVal];
-        assignmentsByQ[defQ] = parseAssignments(cwInitRes.data);
-        console.log('[assign] default', defQ, '(', defaultPeriodVal, '):', assignmentsByQ[defQ].length, 'classes');
-      }
-
-      // Fetch ALL other quarters — fresh GET each time to get valid VIEWSTATE
-      for (const { val: pval } of cwPeriods) {
-        if (pval === defaultPeriodVal) continue;
-        const q = periodValToQ[pval];
-        if (!q) continue;
-        await new Promise(r => setTimeout(r, 400));
-        try {
-          // Fresh GET to get current VIEWSTATE for this session
-          const freshGet = await client.get(CW_URL, {
-            headers: { Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8', Referer: CW_URL },
-          });
-          const $fresh = cheerio.load(freshGet.data);
-          const body = new URLSearchParams({
-            '__EVENTTARGET':                   'ctl00$plnMain$ddlReportCardRuns',
-            '__EVENTARGUMENT':                 '',
-            '__VIEWSTATE':                     $fresh('input[name="__VIEWSTATE"]').val()         || '',
-            '__VIEWSTATEGENERATOR':            $fresh('input[name="__VIEWSTATEGENERATOR"]').val() || '',
-            '__EVENTVALIDATION':               $fresh('input[name="__EVENTVALIDATION"]').val()    || '',
-            'ctl00$plnMain$ddlReportCardRuns': pval,
-            'ctl00$plnMain$ddlClasses':        'ALL',
-            'ctl00$plnMain$ddlCompetencies':   'ALL',
-            'ctl00$plnMain$ddlOrderBy':        'Class',
-          });
-          const postRes = await client.post(CW_URL, body.toString(), {
-            headers: {
-              'Content-Type': 'application/x-www-form-urlencoded',
-              'Referer': CW_URL,
-              'Accept':  'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-            },
-          });
-          const $post = cheerio.load(postRes.data);
-          const blocks = $post('.AssignmentClass').length;
-          // Verify which period HAC actually returned
-          let nowPeriod = '';
-          $post('#plnMain_ddlReportCardRuns option').each((_, el) => {
-            const sel = $post(el).attr('selected');
-            if (sel !== undefined && sel !== false && sel !== null) {
-              nowPeriod = ($post(el).attr('value') || '').trim();
-            }
-          });
-          console.log('[assign] period', pval, '(', q, ') → nowPeriod:', nowPeriod, 'blocks:', blocks);
-          assignmentsByQ[q] = parseAssignments(postRes.data);
-          console.log('[assign]', q, ':', assignmentsByQ[q].length, 'classes,',
-            assignmentsByQ[q].reduce((s, c) => s + c.assignments.length, 0), 'assignments');
-        } catch (e) {
-          console.error('[assign] period', pval, 'error:', e.message);
-          assignmentsByQ[q] = [];
-        }
-      }
     } catch (err) {
-      console.error('[assignments fetch]', err.message);
+      console.error('[live]', err.message);
     }
 
     // ── 3. Student info ───────────────────────────────────────────────────
@@ -576,16 +501,6 @@ app.post('/api/grades', async (req, res) => {
       console.log(`  ${c.name}: Q1=${c.q1avg ?? '—'} Q2=${c.q2avg ?? '—'} Q3=${c.q3avg ?? '—'} Q4=${c.q4avg ?? '—'}`)
     );
 
-    // Build byClass: { CourseName: { q1:[...], q2:[...], q3:[...], q4:[...] } }
-    const assignByClass = {};
-    ['q1','q2','q3','q4'].forEach(q => {
-      (assignmentsByQ[q] || []).forEach(cls => {
-        if (!assignByClass[cls.name]) assignByClass[cls.name] = {};
-        assignByClass[cls.name][q] = cls.assignments;
-      });
-    });
-    console.log('[assignByClass] courses:', Object.keys(assignByClass).length);
-
     res.json({
       student,
       courses,
@@ -603,7 +518,6 @@ app.post('/api/grades', async (req, res) => {
         liveCount: liveGrades.size,
         sampleRows: [...rcRows.entries()].slice(0, 4).map(([k, v]) => ({ raw: k, ...v })),
       },
-      assignByClass,
     });
 
   } catch (err) {
@@ -897,53 +811,31 @@ function parseAssignments(html) {
   return classes;
 }
 
-// Fetch assignments for one period using a brand-new client (fresh login each time)
-async function fetchAssignmentsPeriod(username, password, periodValue) {
-  const client = makeClient();
-  await login(client, username, password);
-
-  const getRes = await client.get(CW_URL, {
-    headers: { Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8', Referer: HAC_BASE },
-  });
-  const $g = cheerio.load(getRes.data);
-
-  // Build POST body with ALL hidden fields from the page
-  const formData = {};
-  $g('input[type="hidden"]').each((_, el) => {
-    const name = $g(el).attr('name');
-    const val  = $g(el).val() || '';
-    if (name) formData[name] = val;
-  });
-  // Override the target fields
-  formData['__EVENTTARGET']                    = 'ctl00$plnMain$ddlReportCardRuns';
-  formData['__EVENTARGUMENT']                  = '';
-  formData['ctl00$plnMain$ddlReportCardRuns']  = periodValue;
-  formData['ctl00$plnMain$ddlClasses']         = 'ALL';
-  formData['ctl00$plnMain$ddlCompetencies']    = 'ALL';
-  formData['ctl00$plnMain$ddlOrderBy']         = 'Class';
-
-  const postRes = await client.post(CW_URL, new URLSearchParams(formData).toString(), {
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
-      'Referer':      CW_URL,
-      'Accept':       'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-    },
-  });
-
-  const $p = cheerio.load(postRes.data);
-  const blocks = $p('.AssignmentClass').length;
-  const selected = $p('#plnMain_ddlReportCardRuns').find('option').filter((_, el) => $p(el).attr('selected') !== undefined).attr('value') || '?';
-  console.log('[fetchPeriod] period=' + periodValue + ' selected=' + selected + ' blocks=' + blocks);
-
-  return parseAssignments(postRes.data);
-}
-
 function parseAssignmentsFromHtml(html) {
   return parseAssignments(html);
 }
 
+// Helper: build a period-switch POST body from a page's hidden fields
+function buildSwitchBody($page, periodValue) {
+  const formData = {};
+  $page('input[type="hidden"]').each((_, el) => {
+    const name = $page(el).attr('name');
+    const val  = $page(el).val() || '';
+    if (name) formData[name] = val;
+  });
+  formData['__EVENTTARGET']                   = 'ctl00$plnMain$ddlReportCardRuns';
+  formData['__EVENTARGUMENT']                 = '';
+  formData['ctl00$plnMain$ddlReportCardRuns'] = periodValue;
+  formData['ctl00$plnMain$ddlClasses']        = 'ALL';
+  formData['ctl00$plnMain$ddlCompetencies']   = 'ALL';
+  formData['ctl00$plnMain$ddlOrderBy']        = 'Class';
+  return new URLSearchParams(formData).toString();
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
-// /api/assignments — fetches all 4 quarters using separate logins per quarter
+// /api/assignments — one login, one GET to capture the initial page + period
+// list, then one POST per period using the SAME initial __VIEWSTATE each time.
+// Never chains from a previous POST response — a bad response can't cascade.
 // ─────────────────────────────────────────────────────────────────────────────
 app.post('/api/assignments', async (req, res) => {
   const { username, password } = req.body || {};
@@ -951,15 +843,15 @@ app.post('/api/assignments', async (req, res) => {
     return res.status(400).json({ error: 'Username and password required.' });
 
   try {
-    // ── Step 1: Login + GET assignments page to find period options ──
-    const client0 = makeClient();
-    await login(client0, username, password);
-    const initRes = await client0.get(CW_URL, {
+    const client = makeClient();
+    await login(client, username, password);
+
+    const initRes = await client.get(CW_URL, {
       headers: { Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8', Referer: HAC_BASE },
     });
-    const $init = cheerio.load(initRes.data);
+    const initHtml = initRes.data; // saved — every POST reads __VIEWSTATE from here
 
-    // Get all non-ALL period options (e.g. "1-2026","2-2026","3-2026","4-2026")
+    const $init = cheerio.load(initHtml);
     const periodOpts = [];
     $init('#plnMain_ddlReportCardRuns option').each((_, el) => {
       const val = ($init(el).attr('value') || '').trim();
@@ -968,80 +860,89 @@ app.post('/api/assignments', async (req, res) => {
     });
     console.log('[asgn] periods:', periodOpts.map(p => p.label + '=' + p.value).join(', '));
 
-    if (!periodOpts.length) {
-      return res.status(404).json({ error: 'No marking periods found on assignments page.' });
-    }
+    if (!periodOpts.length)
+      return res.status(500).json({ error: 'No grading periods found on assignments page.' });
 
-    // ── Step 2: For each period, login fresh + GET + POST ─────────────
-    // We use a separate makeClient() for each period to avoid session issues
-    const allData = {}; // { 'q1': [classes], 'q2': [classes], ... }
+    // Which period is loaded by default
+    const defaultSelected = $init('#plnMain_ddlReportCardRuns').val() || periodOpts[0].value;
+    console.log('[asgn] default period=' + defaultSelected);
 
-    for (let i = 0; i < periodOpts.length; i++) {
-      const p = periodOpts[i];
-      const q = 'q' + (i + 1);
+    // allData: { periodValue → [ { name, rawName, assignments } ] }
+    const allData = {};
+
+    for (const p of periodOpts) {
+      if (p.value === defaultSelected) {
+        // Already loaded — no POST needed
+        allData[p.value] = parseAssignments(initHtml);
+        console.log('[asgn] period ' + p.label + '=' + p.value + ' (default): ' + allData[p.value].length + ' classes');
+        continue;
+      }
+
+      // POST using the INITIAL page's __VIEWSTATE every time (no chaining).
+      // This mirrors exactly what a browser does when it first loads the page
+      // and then the user changes the dropdown.
+      await new Promise(r => setTimeout(r, 350));
       try {
-        // Fresh client + login for each period
-        const client = makeClient();
-        await login(client, username, password);
-
-        // GET the page to get fresh VIEWSTATE
-        const getRes = await client.get(CW_URL, {
-          headers: { Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8', Referer: HAC_BASE },
-        });
-        const $g = cheerio.load(getRes.data);
-
-        // POST to switch to this period — include ALL hidden fields
-        const body = new URLSearchParams();
-        $g('input[type="hidden"]').each((_, el) => {
-          const n = $g(el).attr('name'); const v = $g(el).val() || '';
-          if (n) body.set(n, v);
-        });
-        body.set('__EVENTTARGET',                   'ctl00$plnMain$ddlReportCardRuns');
-        body.set('__EVENTARGUMENT',                 '');
-        body.set('ctl00$plnMain$ddlReportCardRuns', p.value);
-        body.set('ctl00$plnMain$ddlClasses',        'ALL');
-        body.set('ctl00$plnMain$ddlCompetencies',   'ALL');
-        body.set('ctl00$plnMain$ddlOrderBy',        'Class');
-
-        const postRes = await client.post(CW_URL, body.toString(), {
+        const $base = cheerio.load(initHtml);
+        const postRes = await client.post(CW_URL, buildSwitchBody($base, p.value), {
           headers: {
             'Content-Type': 'application/x-www-form-urlencoded',
-            'Referer': CW_URL,
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Referer':      CW_URL,
+            'Accept':       'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
           },
         });
 
-        const $p = cheerio.load(postRes.data);
-        const blocks = $p('.AssignmentClass').length;
-        console.log('[asgn] ' + q + '(' + p.value + ') blocks=' + blocks);
+        const $pr = cheerio.load(postRes.data);
+        const blocks   = $pr('.AssignmentClass').length;
+        const selected = $pr('#plnMain_ddlReportCardRuns').val() || '?';
+        console.log('[asgn] period=' + p.value + ' selected=' + selected + ' blocks=' + blocks);
 
-        const classes = parseAssignments(postRes.data);
-        allData[q] = classes;
-        console.log('[asgn] ' + q + ': ' + classes.length + ' classes, ' + classes.reduce((s,c) => s + c.assignments.length, 0) + ' assignments');
+        allData[p.value] = parseAssignments(postRes.data);
+        console.log('[asgn] ' + p.label + ': ' + allData[p.value].length + ' classes, '
+          + allData[p.value].reduce((s, c) => s + c.assignments.length, 0) + ' assignments');
       } catch (e) {
-        console.error('[asgn] ' + q + ' error:', e.message);
-        allData[q] = [];
+        console.error('[asgn] period ' + p.value + ' failed:', e.message);
+        allData[p.value] = [];
       }
-
-      // Small delay between requests
-      if (i < periodOpts.length - 1) await new Promise(r => setTimeout(r, 400));
     }
 
-    // ── Step 3: Build byClass lookup ──────────────────────────────────
-    // byClass[courseName][q1..q4] = [assignments]
+    console.log('[asgn] done. periods with data:', Object.entries(allData).map(([k, v]) => k + '=' + v.length + 'cls').join(', '));
+
+    // Map period labels → q1/q2/q3/q4 using the same pattern matching as the
+    // grades endpoint, so the two endpoints agree on what "q1" means.
+    const Q_PATTERNS = {
+      q1: [ /^1$/, /quarter\s*1\b/i, /\bmp\s*1\b/i, /\b1st\b/i, /nine.?weeks.?1/i, /six.?weeks.?1/i, /^q1$/i ],
+      q2: [ /^2$/, /quarter\s*2\b/i, /\bmp\s*2\b/i, /\b2nd\b/i, /nine.?weeks.?2/i, /six.?weeks.?2/i, /^q2$/i ],
+      q3: [ /^3$/, /quarter\s*3\b/i, /\bmp\s*3\b/i, /\b3rd\b/i, /nine.?weeks.?3/i, /six.?weeks.?3/i, /^q3$/i ],
+      q4: [ /^4$/, /quarter\s*4\b/i, /\bmp\s*4\b/i, /\b4th\b/i, /nine.?weeks.?4/i, /six.?weeks.?4/i, /^q4$/i ],
+    };
+    const quarterMapping = {};
+    const usedVals = new Set();
+    for (const [q, pats] of Object.entries(Q_PATTERNS)) {
+      const match = periodOpts.find(p => !usedVals.has(p.value) && pats.some(re => re.test(p.label.trim())));
+      if (match) { quarterMapping[q] = match.value; usedVals.add(match.value); }
+    }
+    // Positional fallback for any unmatched quarters
+    periodOpts.filter(p => !usedVals.has(p.value)).forEach((p, i) => {
+      const q = ['q1', 'q2', 'q3', 'q4'][i];
+      if (q && !quarterMapping[q]) { quarterMapping[q] = p.value; usedVals.add(p.value); }
+    });
+    console.log('[asgn] quarterMapping:', JSON.stringify(quarterMapping));
+
+    // Build byClass: { cleanName: { q1: [...], q2: [...], ... } }
     const byClass = {};
-    ['q1','q2','q3','q4'].forEach(q => {
-      (allData[q] || []).forEach(cls => {
+    for (const [q, periodVal] of Object.entries(quarterMapping)) {
+      const classes = allData[periodVal] || [];
+      classes.forEach(cls => {
         if (!byClass[cls.name]) byClass[cls.name] = {};
         byClass[cls.name][q] = cls.assignments;
       });
-    });
+    }
 
-    console.log('[asgn] byClass courses:', Object.keys(byClass).length);
     res.json({ periodOpts, byClass });
 
   } catch (err) {
-    console.error('[/api/assignments] ERROR:', err.message);
+    console.error('[/api/assignments]', err.message);
     res.status(500).json({ error: err.message });
   }
 });
