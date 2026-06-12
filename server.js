@@ -836,9 +836,9 @@ function buildSwitchBody($page, periodValue) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// /api/assignments — one login, one GET to capture the initial page + period
-// list, then one POST per period using the SAME initial __VIEWSTATE each time.
-// Never chains from a previous POST response — a bad response can't cascade.
+// /api/assignments — one login, then for each period: fresh GET → POST switch.
+// A fresh GET before every POST ensures a clean __VIEWSTATE so ASP.NET accepts
+// the period switch.  HAC periods are numeric (1=Q1, 2=Q2, 3=Q3, 4=Q4).
 // ─────────────────────────────────────────────────────────────────────────────
 app.post('/api/assignments', async (req, res) => {
   const { username, password } = req.body || {};
@@ -849,10 +849,11 @@ app.post('/api/assignments', async (req, res) => {
     const client = makeClient();
     await login(client, username, password);
 
+    // Initial GET — discover available periods and capture the default period's data
     const initRes = await client.get(CW_URL, {
       headers: { Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8', Referer: HAC_BASE },
     });
-    const initHtml = initRes.data; // saved — every POST reads __VIEWSTATE from here
+    const initHtml = initRes.data;
 
     const $init = cheerio.load(initHtml);
     const periodOpts = [];
@@ -866,7 +867,6 @@ app.post('/api/assignments', async (req, res) => {
     if (!periodOpts.length)
       return res.status(500).json({ error: 'No grading periods found on assignments page.' });
 
-    // Which period is loaded by default
     const defaultSelected = $init('#plnMain_ddlReportCardRuns').val() || periodOpts[0].value;
     console.log('[asgn] default period=' + defaultSelected);
 
@@ -875,19 +875,24 @@ app.post('/api/assignments', async (req, res) => {
 
     for (const p of periodOpts) {
       if (p.value === defaultSelected) {
-        // Already loaded — no POST needed
+        // Default period is already rendered — no POST needed
         allData[p.value] = parseAssignments(initHtml);
         console.log('[asgn] period ' + p.label + '=' + p.value + ' (default): ' + allData[p.value].length + ' classes');
         continue;
       }
 
-      // POST using the INITIAL page's __VIEWSTATE every time (no chaining).
-      // This mirrors exactly what a browser does when it first loads the page
-      // and then the user changes the dropdown.
-      await new Promise(r => setTimeout(r, 350));
+      // For every non-default period: do a fresh GET first so the __VIEWSTATE
+      // belongs to the currently rendered page, then POST the dropdown change.
+      // Using a stale viewstate (e.g. from period 4 while switching to period 1)
+      // causes HAC to silently return empty assignment blocks.
+      await new Promise(r => setTimeout(r, 400));
       try {
-        const $base = cheerio.load(initHtml);
-        const postRes = await client.post(CW_URL, buildSwitchBody($base, p.value), {
+        const freshRes = await client.get(CW_URL, {
+          headers: { Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8', Referer: HAC_BASE },
+        });
+        const $fresh = cheerio.load(freshRes.data);
+
+        const postRes = await client.post(CW_URL, buildSwitchBody($fresh, p.value), {
           headers: {
             'Content-Type': 'application/x-www-form-urlencoded',
             'Referer':      CW_URL,
@@ -911,24 +916,19 @@ app.post('/api/assignments', async (req, res) => {
 
     console.log('[asgn] done. periods with data:', Object.entries(allData).map(([k, v]) => k + '=' + v.length + 'cls').join(', '));
 
-    // Map period labels → q1/q2/q3/q4 using the same pattern matching as the
-    // grades endpoint, so the two endpoints agree on what "q1" means.
-    const Q_PATTERNS = {
-      q1: [ /^1$/, /quarter\s*1\b/i, /\bmp\s*1\b/i, /\b1st\b/i, /nine.?weeks.?1/i, /six.?weeks.?1/i, /^q1$/i ],
-      q2: [ /^2$/, /quarter\s*2\b/i, /\bmp\s*2\b/i, /\b2nd\b/i, /nine.?weeks.?2/i, /six.?weeks.?2/i, /^q2$/i ],
-      q3: [ /^3$/, /quarter\s*3\b/i, /\bmp\s*3\b/i, /\b3rd\b/i, /nine.?weeks.?3/i, /six.?weeks.?3/i, /^q3$/i ],
-      q4: [ /^4$/, /quarter\s*4\b/i, /\bmp\s*4\b/i, /\b4th\b/i, /nine.?weeks.?4/i, /six.?weeks.?4/i, /^q4$/i ],
-    };
+    // Map periods → q1/q2/q3/q4 by sorting numerically.
+    // HAC Report Card Run values are like "1","2","3","4" or "1-2026","2-2026",etc.
+    // Sorting by the leading integer gives the correct Q1→Q4 order.
+    const sortedPeriods = [...periodOpts].sort((a, b) => {
+      const na = parseInt(a.value, 10) || parseInt(a.label, 10) || 0;
+      const nb = parseInt(b.value, 10) || parseInt(b.label, 10) || 0;
+      return na - nb;
+    });
+
     const quarterMapping = {};
-    const usedVals = new Set();
-    for (const [q, pats] of Object.entries(Q_PATTERNS)) {
-      const match = periodOpts.find(p => !usedVals.has(p.value) && pats.some(re => re.test(p.label.trim())));
-      if (match) { quarterMapping[q] = match.value; usedVals.add(match.value); }
-    }
-    // Positional fallback for any unmatched quarters
-    periodOpts.filter(p => !usedVals.has(p.value)).forEach((p, i) => {
+    sortedPeriods.forEach((p, i) => {
       const q = ['q1', 'q2', 'q3', 'q4'][i];
-      if (q && !quarterMapping[q]) { quarterMapping[q] = p.value; usedVals.add(p.value); }
+      if (q) quarterMapping[q] = p.value;
     });
     console.log('[asgn] quarterMapping:', JSON.stringify(quarterMapping));
 
