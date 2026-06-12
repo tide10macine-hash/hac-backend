@@ -428,17 +428,10 @@ app.post('/api/grades', async (req, res) => {
       if (!defaultPeriodVal) defaultPeriodVal = cwPeriods[cwPeriods.length - 1]?.val || '';
       console.log('[assign] default period on page:', defaultPeriodVal);
 
-      // Map each cwPeriod → quarter key using quarterMap labels
-      // e.g. quarterMap.q1.label = "1", assignPeriodMap["1"] = "1-2026"
+      // Map by POSITION — cwPeriods are always in order: [0]=Q1, [1]=Q2, [2]=Q3, [3]=Q4
+      // This is the same approach used for RC columns and is always reliable
       const periodValToQ = {};
-      for (const [q, qm] of Object.entries(quarterMap)) {
-        const pval = assignPeriodMap[qm.label];
-        if (pval) periodValToQ[pval] = q;
-      }
-      // Also map by position if above fails
-      if (!Object.keys(periodValToQ).length) {
-        cwPeriods.forEach((p, i) => { periodValToQ[p.val] = 'q' + (i + 1); });
-      }
+      cwPeriods.forEach((p, i) => { periodValToQ[p.val] = 'q' + (i + 1); });
       console.log('[assign] periodValToQ:', JSON.stringify(periodValToQ));
 
       // Parse default period assignments
@@ -448,21 +441,24 @@ app.post('/api/grades', async (req, res) => {
         console.log('[assign] default', defQ, '(', defaultPeriodVal, '):', assignmentsByQ[defQ].length, 'classes');
       }
 
-      // Fetch remaining quarters by POSTing period switch — using same session
-      let lastHtml = cwInitRes.data;
+      // Fetch ALL other quarters — fresh GET each time to get valid VIEWSTATE
       for (const { val: pval } of cwPeriods) {
         if (pval === defaultPeriodVal) continue;
         const q = periodValToQ[pval];
         if (!q) continue;
-        await new Promise(r => setTimeout(r, 500));
+        await new Promise(r => setTimeout(r, 400));
         try {
-          const $prev = cheerio.load(lastHtml);
-          const body  = new URLSearchParams({
+          // Fresh GET to get current VIEWSTATE for this session
+          const freshGet = await client.get(CW_URL, {
+            headers: { Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8', Referer: CW_URL },
+          });
+          const $fresh = cheerio.load(freshGet.data);
+          const body = new URLSearchParams({
             '__EVENTTARGET':                   'ctl00$plnMain$ddlReportCardRuns',
             '__EVENTARGUMENT':                 '',
-            '__VIEWSTATE':                     $prev('input[name="__VIEWSTATE"]').val()         || '',
-            '__VIEWSTATEGENERATOR':            $prev('input[name="__VIEWSTATEGENERATOR"]').val() || '',
-            '__EVENTVALIDATION':               $prev('input[name="__EVENTVALIDATION"]').val()    || '',
+            '__VIEWSTATE':                     $fresh('input[name="__VIEWSTATE"]').val()         || '',
+            '__VIEWSTATEGENERATOR':            $fresh('input[name="__VIEWSTATEGENERATOR"]').val() || '',
+            '__EVENTVALIDATION':               $fresh('input[name="__EVENTVALIDATION"]').val()    || '',
             'ctl00$plnMain$ddlReportCardRuns': pval,
             'ctl00$plnMain$ddlClasses':        'ALL',
             'ctl00$plnMain$ddlCompetencies':   'ALL',
@@ -475,10 +471,18 @@ app.post('/api/grades', async (req, res) => {
               'Accept':  'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
             },
           });
-          lastHtml = postRes.data;
-          const blocks = cheerio.load(lastHtml)('.AssignmentClass').length;
-          console.log('[assign] switched to', pval, '(', q, ') blocks:', blocks);
-          assignmentsByQ[q] = parseAssignments(lastHtml);
+          const $post = cheerio.load(postRes.data);
+          const blocks = $post('.AssignmentClass').length;
+          // Verify which period HAC actually returned
+          let nowPeriod = '';
+          $post('#plnMain_ddlReportCardRuns option').each((_, el) => {
+            const sel = $post(el).attr('selected');
+            if (sel !== undefined && sel !== false && sel !== null) {
+              nowPeriod = ($post(el).attr('value') || '').trim();
+            }
+          });
+          console.log('[assign] period', pval, '(', q, ') → nowPeriod:', nowPeriod, 'blocks:', blocks);
+          assignmentsByQ[q] = parseAssignments(postRes.data);
           console.log('[assign]', q, ':', assignmentsByQ[q].length, 'classes,',
             assignmentsByQ[q].reduce((s, c) => s + c.assignments.length, 0), 'assignments');
         } catch (e) {
