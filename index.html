@@ -841,9 +841,14 @@
       if (!courses.length) throw new Error('No grade data found. Check credentials or try again.');
       // Store quarter→period mapping for assignment fetching
       if (data._debug && data._debug.quarterMap) {
-        _quarterPeriods    = data._debug.quarterMap;          // { q1: '1', ... } RC values
+        _quarterPeriods    = data._debug.quarterMap;
         _quarterLabels     = data._debug.quarterLabels || {};
-        _assignQuarterMap  = data._debug.assignQuarterMap || {}; // { q1: '1-2026', ... } Assignments page values
+        _assignQuarterMap  = data._debug.assignQuarterMap || {};
+      }
+      // Store assignments data from grades response - fetched with same session
+      if (data.assignByClass) {
+        _assignByClass = data.assignByClass;
+        console.log('[asgn] pre-loaded from grades:', Object.keys(_assignByClass).length, 'courses');
       }
       let studentName = '';
       const s = data.student || {};
@@ -1114,8 +1119,10 @@
   }
 
   function getAssignments() {
-    if (_assignByClass) return Promise.resolve(_assignByClass);
+    // Best case: assignments already loaded as part of grades fetch
+    if (_assignByClass && Object.keys(_assignByClass).length) return Promise.resolve(_assignByClass);
     if (_assignPromise) return _assignPromise;
+    // Fallback: call /api/assignments separately (slower, separate login)
     _assignPromise = fetch('/api/assignments', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1124,7 +1131,7 @@
     .then(r => r.ok ? r.json() : r.json().then(e => Promise.reject(new Error(e.error || 'Failed'))))
     .then(data => {
       _assignByClass = data.byClass || {};
-      console.log('[asgn] loaded', Object.keys(_assignByClass).length, 'courses:', Object.keys(_assignByClass).slice(0,5));
+      console.log('[asgn] fallback loaded', Object.keys(_assignByClass).length, 'courses');
       _assignPromise = null;
       return _assignByClass;
     })
