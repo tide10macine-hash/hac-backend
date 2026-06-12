@@ -792,6 +792,9 @@ function parseAssignments(html) {
       const scoreRaw   = (cells[4] || '').trim();
       const totalRaw   = (cells[5] || '').trim();
       if (!assignName || assignName === 'Assignment' || assignName === 'Date Due') return;
+      // skip category-weight summary rows (e.g. "Assessment of Learning", "Course overall average is:")
+      if (/overall average/i.test(assignName) || /^\d+(\.\d+)?$/.test(cells[1] || '') && /%/.test(scoreRaw)) return;
+      if (scoreRaw.includes('%') && !scoreRaw.includes('/')) return;
       const score = parseFloat(scoreRaw);
       const total = parseFloat(totalRaw);
       assignments.push({
