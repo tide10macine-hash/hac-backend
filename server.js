@@ -818,20 +818,62 @@ function parseAssignmentsFromHtml(html) {
   return parseAssignments(html);
 }
 
-// Helper: build a period-switch POST body from a page's hidden fields
-function buildSwitchBody($page, periodValue) {
+// Find the "Report Card Run" <select> on the Assignments page.
+// HAC's control name has varied (ddlReportCardRuns / ddlRCRuns), so locate it
+// dynamically rather than hardcoding.  Returns { name, options[], selected }.
+function findRunSelect($page) {
+  let $sel = $page('#plnMain_ddlReportCardRuns');
+  if (!$sel.length) $sel = $page('select[name*="ReportCardRun"]');
+  if (!$sel.length) $sel = $page('select[name*="RCRun"]');
+  if (!$sel.length) $sel = $page('select[id*="ReportCardRun"], select[id*="RCRun"]');
+  // Last resort: the select whose option values look like grading-run codes
+  // (e.g. "1", "4", "1-2026") and aren't the Classes/OrderBy dropdowns.
+  if (!$sel.length) {
+    $page('select').each((_, el) => {
+      const opts = $page(el).find('option').map((__, o) => ($page(o).attr('value') || '').trim()).get();
+      const looksLikeRuns = opts.filter(v => /^\d+(-\d{2,4})?$/.test(v)).length >= 2;
+      if (looksLikeRuns && !$sel.length) $sel = $page(el);
+    });
+  }
+  if (!$sel.length) return null;
+
+  const name = $sel.attr('name') || '';
+  const options = [];
+  $sel.find('option').each((_, o) => {
+    const value = ($page(o).attr('value') || '').trim();
+    const label = $page(o).text().trim();
+    if (value && value.toUpperCase() !== 'ALL') options.push({ value, label });
+  });
+  let selected = $sel.find('option[selected]').attr('value') || $sel.val() || (options[0] && options[0].value) || '';
+  return { name, options, selected };
+}
+
+// Build a period-switch POST body that mirrors a real browser dropdown change:
+// every hidden field + every other <select>'s currently-selected value, with the
+// run dropdown overridden to the target period and __EVENTTARGET pointed at it.
+function buildSwitchBody($page, runName, periodValue) {
   const formData = {};
+
+  // 1. All hidden inputs (__VIEWSTATE, __VIEWSTATEGENERATOR, __EVENTVALIDATION, …)
   $page('input[type="hidden"]').each((_, el) => {
     const name = $page(el).attr('name');
-    const val  = $page(el).val() || '';
-    if (name) formData[name] = val;
+    if (name) formData[name] = $page(el).val() || '';
   });
-  formData['__EVENTTARGET']                   = 'ctl00$plnMain$ddlReportCardRuns';
-  formData['__EVENTARGUMENT']                 = '';
-  formData['ctl00$plnMain$ddlReportCardRuns'] = periodValue;
-  formData['ctl00$plnMain$ddlClasses']        = 'ALL';
-  formData['ctl00$plnMain$ddlCompetencies']   = 'ALL';
-  formData['ctl00$plnMain$ddlOrderBy']        = 'Class';
+
+  // 2. Every <select>'s current value (ddlClasses, ddlCompetencies, ddlOrderBy, …)
+  $page('select').each((_, el) => {
+    const name = $page(el).attr('name');
+    if (!name) return;
+    const sel = $page(el).find('option[selected]').attr('value');
+    const val = sel !== undefined ? sel : ($page(el).val() || '');
+    formData[name] = val;
+  });
+
+  // 3. Trigger the postback on the run dropdown, switching to the target period
+  formData['__EVENTTARGET']   = runName;
+  formData['__EVENTARGUMENT'] = '';
+  formData[runName]           = periodValue;
+
   return new URLSearchParams(formData).toString();
 }
 
@@ -849,42 +891,39 @@ app.post('/api/assignments', async (req, res) => {
     const client = makeClient();
     await login(client, username, password);
 
-    // Initial GET — discover available periods and capture the default period's data
+    // Initial GET — discover the run dropdown + available periods
     const initRes = await client.get(CW_URL, {
       headers: { Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8', Referer: HAC_BASE },
     });
     const initHtml = initRes.data;
-
     const $init = cheerio.load(initHtml);
-    const periodOpts = [];
-    $init('#plnMain_ddlReportCardRuns option').each((_, el) => {
-      const val = ($init(el).attr('value') || '').trim();
-      const lbl = $init(el).text().trim();
-      if (val && val !== 'ALL') periodOpts.push({ value: val, label: lbl });
-    });
-    console.log('[asgn] periods:', periodOpts.map(p => p.label + '=' + p.value).join(', '));
 
-    if (!periodOpts.length)
+    const runSel = findRunSelect($init);
+    if (!runSel || !runSel.options.length)
       return res.status(500).json({ error: 'No grading periods found on assignments page.' });
 
-    const defaultSelected = $init('#plnMain_ddlReportCardRuns').val() || periodOpts[0].value;
-    console.log('[asgn] default period=' + defaultSelected);
+    const runName    = runSel.name;                 // e.g. ctl00$plnMain$ddlReportCardRuns
+    const periodOpts = runSel.options;              // [{ value, label }]
+    const defaultSelected = runSel.selected;
+    console.log('[asgn] runName=' + runName + ' default=' + defaultSelected
+      + ' periods:', periodOpts.map(p => p.label + '=' + p.value).join(', '));
 
     // allData: { periodValue → [ { name, rawName, assignments } ] }
     const allData = {};
+    const debugPerPeriod = [];
 
     for (const p of periodOpts) {
       if (p.value === defaultSelected) {
         // Default period is already rendered — no POST needed
         allData[p.value] = parseAssignments(initHtml);
-        console.log('[asgn] period ' + p.label + '=' + p.value + ' (default): ' + allData[p.value].length + ' classes');
+        const acount = allData[p.value].reduce((s, c) => s + c.assignments.length, 0);
+        debugPerPeriod.push({ value: p.value, label: p.label, source: 'default', selectedAfter: p.value, blocks: allData[p.value].length, assignments: acount });
+        console.log('[asgn] ' + p.label + '=' + p.value + ' (default): ' + allData[p.value].length + ' classes, ' + acount + ' assignments');
         continue;
       }
 
-      // For every non-default period: do a fresh GET first so the __VIEWSTATE
-      // belongs to the currently rendered page, then POST the dropdown change.
-      // Using a stale viewstate (e.g. from period 4 while switching to period 1)
-      // causes HAC to silently return empty assignment blocks.
+      // Non-default period: fresh GET (clean __VIEWSTATE) then POST the switch,
+      // mirroring a real browser dropdown change as closely as possible.
       await new Promise(r => setTimeout(r, 400));
       try {
         const freshRes = await client.get(CW_URL, {
@@ -892,39 +931,37 @@ app.post('/api/assignments', async (req, res) => {
         });
         const $fresh = cheerio.load(freshRes.data);
 
-        const postRes = await client.post(CW_URL, buildSwitchBody($fresh, p.value), {
+        const postRes = await client.post(CW_URL, buildSwitchBody($fresh, runName, p.value), {
           headers: {
             'Content-Type': 'application/x-www-form-urlencoded',
             'Referer':      CW_URL,
             'Accept':       'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'X-Requested-With': 'XMLHttpRequest',
           },
         });
 
         const $pr = cheerio.load(postRes.data);
-        const blocks   = $pr('.AssignmentClass').length;
-        const selected = $pr('#plnMain_ddlReportCardRuns').val() || '?';
-        console.log('[asgn] period=' + p.value + ' selected=' + selected + ' blocks=' + blocks);
-
+        const afterSel = findRunSelect($pr);
+        const selectedAfter = afterSel ? afterSel.selected : '?';
         allData[p.value] = parseAssignments(postRes.data);
-        console.log('[asgn] ' + p.label + ': ' + allData[p.value].length + ' classes, '
-          + allData[p.value].reduce((s, c) => s + c.assignments.length, 0) + ' assignments');
+        const acount = allData[p.value].reduce((s, c) => s + c.assignments.length, 0);
+        debugPerPeriod.push({ value: p.value, label: p.label, source: 'post', selectedAfter, blocks: allData[p.value].length, assignments: acount });
+        console.log('[asgn] ' + p.label + '=' + p.value + ' selectedAfter=' + selectedAfter
+          + ' blocks=' + allData[p.value].length + ' assignments=' + acount);
       } catch (e) {
         console.error('[asgn] period ' + p.value + ' failed:', e.message);
         allData[p.value] = [];
+        debugPerPeriod.push({ value: p.value, label: p.label, source: 'error', error: e.message });
       }
     }
 
-    console.log('[asgn] done. periods with data:', Object.entries(allData).map(([k, v]) => k + '=' + v.length + 'cls').join(', '));
-
-    // Map periods → q1/q2/q3/q4 by sorting numerically.
-    // HAC Report Card Run values are like "1","2","3","4" or "1-2026","2-2026",etc.
-    // Sorting by the leading integer gives the correct Q1→Q4 order.
+    // Map periods → q1/q2/q3/q4 by sorting on the leading integer of the period.
+    // HAC Report Card Run values are "1".."4" or "1-2026".."4-2026" (1=Q1 … 4=Q4).
     const sortedPeriods = [...periodOpts].sort((a, b) => {
       const na = parseInt(a.value, 10) || parseInt(a.label, 10) || 0;
       const nb = parseInt(b.value, 10) || parseInt(b.label, 10) || 0;
       return na - nb;
     });
-
     const quarterMapping = {};
     sortedPeriods.forEach((p, i) => {
       const q = ['q1', 'q2', 'q3', 'q4'][i];
@@ -942,7 +979,11 @@ app.post('/api/assignments', async (req, res) => {
       });
     }
 
-    res.json({ periodOpts, byClass });
+    res.json({
+      periodOpts,
+      byClass,
+      _debug: { runName, defaultSelected, quarterMapping, perPeriod: debugPerPeriod },
+    });
 
   } catch (err) {
     console.error('[/api/assignments]', err.message);
