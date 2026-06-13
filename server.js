@@ -634,33 +634,49 @@ app.post('/api/teachers', async (req, res) => {
   }
 });
 
-// ── DEBUG (temporary): locate teacher names + emails on the schedule page ─────
+// ── DEBUG (temporary): locate teacher names + emails across candidate pages ───
 app.post('/api/debug-teachers', async (req, res) => {
   const { username, password } = req.body || {};
   if (!username || !password) return res.status(400).json({ error: 'creds required' });
   const client = makeClient();
-  const dump = (html) => {
+  const base = `${HAC_BASE}/HomeAccess/Content/Student/`;
+  const candidates = {
+    Schedule:         base + 'Schedule.aspx',
+    Classes:          base + 'Classes.aspx',
+    StudentSchedule:  base + 'StudentSchedule.aspx',
+    Registration:     INFO_URL,
+    Assignments:      CW_URL,
+  };
+  const dump = (html, finalUrl) => {
     const $ = cheerio.load(html);
     const mailtos = [];
-    $('a[href^="mailto:" i]').each((_, a) => { if (mailtos.length < 20) mailtos.push({ text: $(a).text().trim(), href: $(a).attr('href') }); });
-    const tables = [];
-    $('table').each((_, t) => {
-      if (tables.length >= 6) return;
-      const rows = $(t).find('tr');
-      const header = rows.first().find('th,td').map((_, c) => $(c).text().trim()).get();
-      const sample = rows.slice(1, 3).map((_, r) => $(r).find('td').map((_, c) => $(c).text().trim().replace(/\s+/g,' ').slice(0,40)).get()).get();
-      if (header.length) tables.push({ header, sample });
+    $('a[href^="mailto:" i]').each((_, a) => { if (mailtos.length < 15) mailtos.push({ text: $(a).text().trim(), href: $(a).attr('href') }); });
+    const headings = [];
+    $('h1,h2,h3,.sg-header-heading,.sg-header-subheading').each((_, e) => {
+      if (headings.length >= 16) return;
+      const t = $(e).text().trim().replace(/\s+/g, ' ');
+      if (t) headings.push(t.slice(0, 90));
     });
-    return { mailtoCount: mailtos.length, mailtos, tables };
+    const tableHeaders = [];
+    $('table').each((_, t) => {
+      if (tableHeaders.length >= 6) return;
+      const h = $(t).find('tr').first().find('th,td').map((_, c) => $(c).text().trim()).get();
+      if (h.length) tableHeaders.push(h);
+    });
+    return { finalUrl, len: html.length, title: $('title').text().trim(), mailtoCount: mailtos.length, mailtos, headings, tableHeaders };
   };
   try {
     await login(client, username, password);
-    const sched = await client.get(SCHED_URL).then(r => r.data).catch(e => 'ERR:' + e.message);
-    const cw    = await client.get(CW_URL).then(r => r.data).catch(e => 'ERR:' + e.message);
-    res.json({
-      schedule:    typeof sched === 'string' && sched.startsWith('ERR:') ? { error: sched } : { parsed: parseTeachers(sched), ...dump(sched) },
-      assignments: typeof cw === 'string' && cw.startsWith('ERR:') ? { error: cw } : dump(cw),
-    });
+    const pages = {};
+    for (const [name, url] of Object.entries(candidates)) {
+      try {
+        const r = await client.get(url, { headers: { Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8' } });
+        pages[name] = dump(String(r.data), r.request?.res?.responseUrl || url);
+      } catch (e) {
+        pages[name] = { error: e.message };
+      }
+    }
+    res.json(pages);
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
