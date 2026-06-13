@@ -10,7 +10,7 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-const HAC_BASE  = 'https://hac.friscoisd.org';
+const HAC_BASE  = process.env.HAC_BASE || 'https://hac.friscoisd.org';
 const LOGIN_URL = `${HAC_BASE}/HomeAccess/Account/LogOn`;
 const RC_URL    = `${HAC_BASE}/HomeAccess/Content/Student/ReportCards.aspx`;
 const CW_URL    = `${HAC_BASE}/HomeAccess/Content/Student/Assignments.aspx`;
@@ -851,7 +851,9 @@ function findRunSelect($page) {
 // Build a period-switch POST body that mirrors a real browser dropdown change:
 // every hidden field + every other <select>'s currently-selected value, with the
 // run dropdown overridden to the target period and __EVENTTARGET pointed at it.
-function buildSwitchBody($page, runName, periodValue) {
+// Pass `ajax = { scriptManager, updatePanel }` to additionally form a native
+// ASP.NET AJAX async (delta) postback.
+function buildSwitchBody($page, runName, periodValue, ajax) {
   const formData = {};
 
   // 1. All hidden inputs (__VIEWSTATE, __VIEWSTATEGENERATOR, __EVENTVALIDATION, …)
@@ -865,16 +867,147 @@ function buildSwitchBody($page, runName, periodValue) {
     const name = $page(el).attr('name');
     if (!name) return;
     const sel = $page(el).find('option[selected]').attr('value');
-    const val = sel !== undefined ? sel : ($page(el).val() || '');
-    formData[name] = val;
+    formData[name] = sel !== undefined ? sel : ($page(el).val() || '');
   });
+
+  // 2b. Keep the filter dropdowns unrestricted so every class comes back. If a
+  //     fresh page renders these with no explicit selection, default them to the
+  //     "show everything" values the browser would post.
+  for (const k of Object.keys(formData)) {
+    if (/ddlClasses$|ddlCompetencies$/i.test(k) && !formData[k]) formData[k] = 'ALL';
+    if (/ddlOrderBy$/i.test(k) && !formData[k])                  formData[k] = 'Class';
+  }
 
   // 3. Trigger the postback on the run dropdown, switching to the target period
   formData['__EVENTTARGET']   = runName;
   formData['__EVENTARGUMENT'] = '';
   formData[runName]           = periodValue;
 
+  // 4. Native AJAX async-postback extras (only used by the delta fallback path).
+  if (ajax && ajax.scriptManager) {
+    formData[ajax.scriptManager] = (ajax.updatePanel || '') + '|' + runName;
+    formData['__ASYNCPOST']      = 'true';
+  }
+
   return new URLSearchParams(formData).toString();
+}
+
+function countAssignments(classes) {
+  return classes.reduce((s, c) => s + c.assignments.length, 0);
+}
+
+// ── ASP.NET AJAX partial-render (delta) helpers ──────────────────────────────
+// An async postback responds with a length-prefixed, pipe-delimited stream:
+//   <len>|<type>|<id>|<content>|<len>|<type>|<id>|<content>|…
+// We detect it and concatenate the HTML from every `updatePanel` segment so the
+// existing cheerio-based parser can read the assignment blocks unchanged.
+function looksLikeDelta(text) {
+  return typeof text === 'string' && /^\s*\d+\|[^|]*\|/.test(text.slice(0, 60));
+}
+function extractHtmlFromDelta(text) {
+  let html = '', i = 0;
+  while (i < text.length) {
+    const p1 = text.indexOf('|', i);             if (p1 < 0) break;
+    const len = parseInt(text.slice(i, p1), 10); if (Number.isNaN(len)) break;
+    const p2 = text.indexOf('|', p1 + 1);        if (p2 < 0) break; // type
+    const p3 = text.indexOf('|', p2 + 1);        if (p3 < 0) break; // id
+    const type    = text.slice(p1 + 1, p2);
+    const content = text.slice(p3 + 1, p3 + 1 + len);
+    if (type === 'updatePanel') html += content;
+    i = p3 + 1 + len + 1; // advance past content + trailing '|'
+  }
+  return html || text; // fall back to raw — cheerio can still find embedded tags
+}
+
+// Locate the ScriptManager UniqueID (needed to form an async postback) plus the
+// UpdatePanel that wraps the run dropdown. Returns null on non-AJAX pages.
+function findScriptManager(html, $page, runName) {
+  const m = html.match(/_initialize\(\s*'([^']+)'/); // Sys.WebForms.PageRequestManager._initialize('ctl00$…$ScriptManager','…')
+  if (!m) return null;
+  let updatePanel = '';
+  const $sel = $page('select').filter((_, el) => $page(el).attr('name') === runName).first();
+  const id   = $sel.parents('[id*="UpdatePanel"]').first().attr('id');
+  if (id) updatePanel = id.replace(/_/g, '$'); // client id → control UniqueID
+  return { scriptManager: m[1], updatePanel };
+}
+
+// Fetch one grading period's assignments by switching the Report Card Run.
+// Strategy: a clean full-page postback first; if it yields no assignment rows,
+// fall back to a native AJAX async postback (some HAC configs only render the
+// assignment detail on the delta response). Returns { classes, diag }.
+async function fetchPeriodData(client, runName, periodValue) {
+  const diag = { sync: null, ajax: null, used: 'none' };
+
+  // Fresh GET so __VIEWSTATE/__EVENTVALIDATION belong to the page we post from.
+  const freshRes = await client.get(CW_URL, {
+    headers: { Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8', Referer: HAC_BASE },
+  });
+  const $fresh = cheerio.load(freshRes.data);
+
+  // ── Attempt 1: clean full-page postback (NO X-Requested-With / AJAX hints) ──
+  const syncRes = await client.post(CW_URL, buildSwitchBody($fresh, runName, periodValue, null), {
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'Referer':      CW_URL,
+      'Accept':       'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+    },
+  });
+  const syncRaw  = String(syncRes.data);
+  let   html     = looksLikeDelta(syncRaw) ? extractHtmlFromDelta(syncRaw) : syncRaw;
+  let   classes  = parseAssignments(html);
+  const syncAfter = findRunSelect(cheerio.load(html));
+  diag.sync = {
+    selectedAfter: syncAfter ? syncAfter.selected : '?',
+    blocks: classes.length, assignments: countAssignments(classes),
+    isDelta: looksLikeDelta(syncRaw), respLen: syncRaw.length,
+  };
+  diag.used = 'sync';
+
+  // ── Attempt 2: native AJAX async postback (only if sync found no rows) ──────
+  if (countAssignments(classes) === 0) {
+    try {
+      const sm = findScriptManager(freshRes.data, $fresh, runName);
+      if (sm) {
+        const ares = await client.post(CW_URL, buildSwitchBody($fresh, runName, periodValue, sm), {
+          headers: {
+            'Content-Type':     'application/x-www-form-urlencoded',
+            'Referer':          CW_URL,
+            'Accept':           '*/*',
+            'X-Requested-With': 'XMLHttpRequest',
+            'X-MicrosoftAjax':  'Delta=true',
+          },
+        });
+        const aRaw     = String(ares.data);
+        const aHtml    = looksLikeDelta(aRaw) ? extractHtmlFromDelta(aRaw) : aRaw;
+        const aClasses = parseAssignments(aHtml);
+        const aAfter   = findRunSelect(cheerio.load(aHtml));
+        diag.ajax = {
+          selectedAfter: aAfter ? aAfter.selected : '?',
+          blocks: aClasses.length, assignments: countAssignments(aClasses),
+          isDelta: looksLikeDelta(aRaw), respLen: aRaw.length,
+          scriptManager: sm.scriptManager, updatePanel: sm.updatePanel,
+        };
+        if (countAssignments(aClasses) > countAssignments(classes)) {
+          classes = aClasses; html = aHtml; diag.used = 'ajax';
+        }
+      } else {
+        diag.ajax = { skipped: 'no ScriptManager on page' };
+      }
+    } catch (e) {
+      diag.ajax = { error: e.message };
+    }
+  }
+
+  // If still empty, surface why (auth bounce? right page, no detail?).
+  if (countAssignments(classes) === 0) {
+    diag.flags = {
+      hasLoginForm:       /LogOnDetails\.UserName/i.test(html),
+      hasAssignmentClass: /AssignmentClass/i.test(html),
+      htmlLen:            html.length,
+    };
+  }
+
+  return { classes, diag };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -916,42 +1049,25 @@ app.post('/api/assignments', async (req, res) => {
       if (p.value === defaultSelected) {
         // Default period is already rendered — no POST needed
         allData[p.value] = parseAssignments(initHtml);
-        const acount = allData[p.value].reduce((s, c) => s + c.assignments.length, 0);
-        debugPerPeriod.push({ value: p.value, label: p.label, source: 'default', selectedAfter: p.value, blocks: allData[p.value].length, assignments: acount });
+        const acount = countAssignments(allData[p.value]);
+        debugPerPeriod.push({ value: p.value, label: p.label, used: 'default', blocks: allData[p.value].length, assignments: acount });
         console.log('[asgn] ' + p.label + '=' + p.value + ' (default): ' + allData[p.value].length + ' classes, ' + acount + ' assignments');
         continue;
       }
 
-      // Non-default period: fresh GET (clean __VIEWSTATE) then POST the switch,
-      // mirroring a real browser dropdown change as closely as possible.
+      // Non-default period: fresh GET (clean __VIEWSTATE) → full-page postback,
+      // with a native AJAX delta postback as a guarded fallback. See fetchPeriodData.
       await new Promise(r => setTimeout(r, 400));
       try {
-        const freshRes = await client.get(CW_URL, {
-          headers: { Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8', Referer: HAC_BASE },
-        });
-        const $fresh = cheerio.load(freshRes.data);
-
-        const postRes = await client.post(CW_URL, buildSwitchBody($fresh, runName, p.value), {
-          headers: {
-            'Content-Type': 'application/x-www-form-urlencoded',
-            'Referer':      CW_URL,
-            'Accept':       'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-            'X-Requested-With': 'XMLHttpRequest',
-          },
-        });
-
-        const $pr = cheerio.load(postRes.data);
-        const afterSel = findRunSelect($pr);
-        const selectedAfter = afterSel ? afterSel.selected : '?';
-        allData[p.value] = parseAssignments(postRes.data);
-        const acount = allData[p.value].reduce((s, c) => s + c.assignments.length, 0);
-        debugPerPeriod.push({ value: p.value, label: p.label, source: 'post', selectedAfter, blocks: allData[p.value].length, assignments: acount });
-        console.log('[asgn] ' + p.label + '=' + p.value + ' selectedAfter=' + selectedAfter
-          + ' blocks=' + allData[p.value].length + ' assignments=' + acount);
+        const { classes, diag } = await fetchPeriodData(client, runName, p.value);
+        allData[p.value] = classes;
+        debugPerPeriod.push({ value: p.value, label: p.label, ...diag, blocks: classes.length, assignments: countAssignments(classes) });
+        console.log('[asgn] ' + p.label + '=' + p.value + ' used=' + diag.used
+          + ' sync=' + JSON.stringify(diag.sync) + (diag.ajax ? ' ajax=' + JSON.stringify(diag.ajax) : ''));
       } catch (e) {
         console.error('[asgn] period ' + p.value + ' failed:', e.message);
         allData[p.value] = [];
-        debugPerPeriod.push({ value: p.value, label: p.label, source: 'error', error: e.message });
+        debugPerPeriod.push({ value: p.value, label: p.label, used: 'error', error: e.message });
       }
     }
 
