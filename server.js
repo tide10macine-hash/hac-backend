@@ -1221,3 +1221,155 @@ app.post('/api/diagnose-switch', async (req, res) => {
     res.status(500).json({ error: e.message, stack: e.stack?.split('\n').slice(0,3) });
   }
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DEBUG: capture EXACTLY what HAC returns when we switch grading periods, so a
+// failing past-quarter can be diagnosed from real output instead of guesswork.
+// Visit  GET /debug  for a form, or POST /api/debug-switch { username, password,
+// period? }. Safe to remove once assignments are confirmed working.
+// ─────────────────────────────────────────────────────────────────────────────
+function listSelects($) {
+  const out = [];
+  $('select').each((_, el) => {
+    out.push({
+      name: $(el).attr('name') || '',
+      id:   $(el).attr('id')   || '',
+      optionCount: $(el).find('option').length,
+      selected: $(el).find('option[selected]').attr('value') || $(el).val() || '',
+    });
+  });
+  return out;
+}
+
+function summarizeAssignPage(raw) {
+  const isDelta = looksLikeDelta(raw);
+  const html    = isDelta ? extractHtmlFromDelta(raw) : raw;
+  const $       = cheerio.load(html);
+  const classes = parseAssignments(html);
+  const after   = findRunSelect($);
+
+  const headings = [];
+  $('.AssignmentClass').each((_, el) => {
+    headings.push($(el).find('.sg-header-heading, a.sg-header-link').first().text().trim());
+  });
+
+  const $first = $('.AssignmentClass').first();
+  let firstBlockHtml = $first.length ? ($.html($first) || '') : '';
+  firstBlockHtml = firstBlockHtml.replace(/\s+/g, ' ').slice(0, 2500);
+
+  let bodyExcerpt = '';
+  if (!$first.length) {
+    const main = $('#plnMain');
+    bodyExcerpt = ((main.length ? main.text() : $('body').text()) || '')
+      .replace(/\s+/g, ' ').trim().slice(0, 1000);
+  }
+
+  return {
+    rawLen: raw.length, isDelta,
+    selectedAfter:   after ? after.selected : '?',
+    blockCount:      classes.length,
+    assignmentCount: countAssignments(classes),
+    headings:        headings.slice(0, 12),
+    hasLoginForm:    /LogOnDetails\.UserName/i.test(html),
+    firstBlockHtml,  // raw structure of the first class block (or empty)
+    bodyExcerpt,     // text excerpt when no blocks were found at all
+  };
+}
+
+app.post('/api/debug-switch', async (req, res) => {
+  const { username, password, period } = req.body || {};
+  if (!username || !password) return res.status(400).json({ error: 'creds required' });
+  const client = makeClient();
+  try {
+    await login(client, username, password);
+
+    const initRes = await client.get(CW_URL, {
+      headers: { Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8', Referer: HAC_BASE },
+    });
+    const $init  = cheerio.load(initRes.data);
+    const runSel = findRunSelect($init);
+    if (!runSel) return res.json({ error: 'run dropdown not found', selects: listSelects($init) });
+
+    // Target = requested period, else the first period that ISN'T the current one.
+    const target = runSel.options.find(o => o.value === period)
+                || runSel.options.find(o => o.value !== runSel.selected)
+                || runSel.options[0];
+
+    const fresh  = await client.get(CW_URL, {
+      headers: { Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8', Referer: HAC_BASE },
+    });
+    const $fresh = cheerio.load(fresh.data);
+
+    // Attempt 1 — clean full-page postback.
+    const syncBody   = buildSwitchBody($fresh, runSel.name, target.value, null);
+    const sentFields = [...new URLSearchParams(syncBody).keys()];
+    const syncRes    = await client.post(CW_URL, syncBody, {
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Referer': CW_URL,
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+      },
+    });
+    const sync = summarizeAssignPage(String(syncRes.data));
+
+    // Attempt 2 — native AJAX async postback.
+    let ajax;
+    const sm = findScriptManager(fresh.data, $fresh, runSel.name);
+    if (sm) {
+      const aRes = await client.post(CW_URL, buildSwitchBody($fresh, runSel.name, target.value, sm), {
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Referer': CW_URL, 'Accept': '*/*',
+          'X-Requested-With': 'XMLHttpRequest', 'X-MicrosoftAjax': 'Delta=true',
+        },
+      });
+      ajax = { scriptManager: sm.scriptManager, updatePanel: sm.updatePanel, ...summarizeAssignPage(String(aRes.data)) };
+    } else {
+      ajax = { skipped: 'no ScriptManager found — page is not ASP.NET AJAX' };
+    }
+
+    res.json({
+      currentPeriod: runSel.selected,
+      initialBlocks: $init('.AssignmentClass').length,
+      runSelect:     { name: runSel.name, options: runSel.options },
+      selectsOnPage: listSelects($init),
+      target,
+      sentFields,
+      sync,
+      ajax,
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message, stack: (e.stack || '').split('\n').slice(0, 4) });
+  }
+});
+
+app.get('/debug', (_req, res) => {
+  res.set('Content-Type', 'text/html').send(`<!doctype html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>HAC Assignments Debug</title>
+<style>body{font:14px system-ui,sans-serif;margin:24px;max-width:920px;color:#111}
+input{padding:9px;margin:5px 0;width:280px;display:block;border:1px solid #ccc;border-radius:6px}
+button{padding:9px 18px;margin-top:10px;border:0;border-radius:6px;background:#2563eb;color:#fff;font-size:14px;cursor:pointer}
+pre{white-space:pre-wrap;word-break:break-word;background:#0b1021;color:#bfe3ff;padding:14px;border-radius:8px;font-size:12px;margin-top:14px}</style>
+</head><body>
+<h2>HAC Assignments — Period-Switch Debug</h2>
+<p>Runs the real Quarter-1 switch and shows what HAC actually returns. Copy the whole result back to your developer.</p>
+<input id="u" placeholder="HAC username" autocomplete="off">
+<input id="p" type="password" placeholder="HAC password" autocomplete="off">
+<input id="q" placeholder="period value (optional, e.g. 1-2026)" autocomplete="off">
+<button id="go">Run diagnostic</button>
+<pre id="out">(results appear here)</pre>
+<script>
+document.getElementById('go').onclick = async function(){
+  var out = document.getElementById('out'); out.textContent = 'Running… (~10s)';
+  try {
+    var r = await fetch('/api/debug-switch', { method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({
+        username: document.getElementById('u').value,
+        password: document.getElementById('p').value,
+        period:   document.getElementById('q').value || undefined }) });
+    out.textContent = JSON.stringify(await r.json(), null, 2);
+  } catch(e){ out.textContent = 'ERROR: ' + e.message; }
+};
+</script>
+</body></html>`);
+});
