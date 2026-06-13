@@ -16,6 +16,7 @@ const RC_URL    = `${HAC_BASE}/HomeAccess/Content/Student/ReportCards.aspx`;
 const CW_URL    = `${HAC_BASE}/HomeAccess/Content/Student/Assignments.aspx`;
 const INFO_URL  = `${HAC_BASE}/HomeAccess/Content/Student/Registration.aspx`;
 const SCHED_URL = `${HAC_BASE}/HomeAccess/Content/Student/Classes.aspx`;
+const STAFF_DIR = 'https://schools.friscoisd.org/campus/high-school/reedy/staff';
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
 
 function makeClient() {
@@ -634,73 +635,55 @@ app.post('/api/teachers', async (req, res) => {
   }
 });
 
-// ── DEBUG (temporary): locate teacher names + emails across candidate pages ───
-app.post('/api/debug-teachers', async (req, res) => {
-  const { username, password } = req.body || {};
-  if (!username || !password) return res.status(400).json({ error: 'creds required' });
+// ── DEBUG (temporary): inspect the Reedy staff directory for photos ───────────
+app.post('/api/debug-staff', async (req, res) => {
+  const { name } = req.body || {};
   const client = makeClient();
-  const base = `${HAC_BASE}/HomeAccess/Content/Student/`;
-  const candidates = {
-    Schedule:         base + 'Schedule.aspx',
-    Classes:          base + 'Classes.aspx',
-    StudentSchedule:  base + 'StudentSchedule.aspx',
-    Registration:     INFO_URL,
-    Assignments:      CW_URL,
-  };
-  const dump = (html, finalUrl) => {
-    const $ = cheerio.load(html);
-    const mailtos = [];
-    $('a[href^="mailto:" i]').each((_, a) => { if (mailtos.length < 15) mailtos.push({ text: $(a).text().trim(), href: $(a).attr('href') }); });
-    const headings = [];
-    $('h1,h2,h3,.sg-header-heading,.sg-header-subheading').each((_, e) => {
-      if (headings.length >= 16) return;
-      const t = $(e).text().trim().replace(/\s+/g, ' ');
-      if (t) headings.push(t.slice(0, 90));
-    });
-    const tableHeaders = [];
-    $('table').each((_, t) => {
-      if (tableHeaders.length >= 6) return;
-      const h = $(t).find('tr').first().find('th,td').map((_, c) => $(c).text().trim()).get();
-      if (h.length) tableHeaders.push(h);
-    });
-    return { finalUrl, len: html.length, title: $('title').text().trim(), mailtoCount: mailtos.length, mailtos, headings, tableHeaders };
-  };
   try {
-    await login(client, username, password);
-    const pages = {};
-    for (const [name, url] of Object.entries(candidates)) {
-      try {
-        const r = await client.get(url, { headers: { Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8' } });
-        pages[name] = dump(String(r.data), r.request?.res?.responseUrl || url);
-      } catch (e) {
-        pages[name] = { error: e.message };
-      }
-    }
-    res.json(pages);
+    const r = await client.get(STAFF_DIR, {
+      headers: { 'User-Agent': UA, Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8' },
+      maxRedirects: 5, validateStatus: () => true,
+    });
+    const html = String(r.data);
+    const $ = cheerio.load(html);
+    const imgs = [];
+    $('img').each((_, im) => {
+      if (imgs.length >= 30) return;
+      imgs.push({ src: $(im).attr('src') || $(im).attr('data-src') || '', alt: $(im).attr('alt') || '', cls: $(im).attr('class') || '' });
+    });
+    const scripts = [];
+    $('script[src]').each((_, s) => { if (scripts.length < 12) scripts.push($(s).attr('src')); });
+    const term = (name || 'Lin').toString();
+    let context = '';
+    const idx = html.toLowerCase().indexOf(term.toLowerCase());
+    if (idx >= 0) context = html.slice(Math.max(0, idx - 500), idx + 500).replace(/\s+/g, ' ');
+    res.json({
+      status: r.status, finalUrl: r.request?.res?.responseUrl, len: html.length, title: $('title').text().trim(),
+      imgCount: $('img').length, imgs, scripts,
+      looksLikeSPA: $('img').length < 5 && /react|vue|app\.js|finalsite|fsapi/i.test(html),
+      contextFor: term, context,
+    });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
 });
 
-app.get('/debug-teachers', (_req, res) => {
+app.get('/debug-staff', (_req, res) => {
   res.set('Content-Type', 'text/html').send(`<!doctype html><html><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1"><title>Teachers Debug</title>
-<style>body{font:14px system-ui,sans-serif;margin:24px;max-width:920px;color:#111}
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Staff Directory Debug</title>
+<style>body{font:14px system-ui,sans-serif;margin:24px;max-width:920px}
 input{padding:9px;margin:5px 0;width:280px;display:block;border:1px solid #ccc;border-radius:6px}
 button{padding:9px 18px;margin-top:10px;border:0;border-radius:6px;background:#3d5aff;color:#fff;font-size:14px;cursor:pointer}
 pre{white-space:pre-wrap;word-break:break-word;background:#0b1021;color:#bfe3ff;padding:14px;border-radius:8px;font-size:12px;margin-top:14px}</style>
-</head><body><h2>Find Teachers + Emails</h2>
-<p>Shows the schedule + assignments structure so the teacher list can be wired exactly. Copy the result back to your developer.</p>
-<input id="u" placeholder="HAC username" autocomplete="off">
-<input id="p" type="password" placeholder="HAC password" autocomplete="off">
+</head><body><h2>Reedy Staff Directory — structure probe</h2>
+<p>Enter one of your teachers' last names (e.g. Lin) and run. Paste the result back to your developer.</p>
+<input id="n" placeholder="teacher last name (e.g. Lin)" autocomplete="off">
 <button id="go">Run</button><pre id="out">(results appear here)</pre>
 <script>document.getElementById('go').onclick=async function(){var o=document.getElementById('out');o.textContent='Running…';
-try{var r=await fetch('/api/debug-teachers',{method:'POST',headers:{'Content-Type':'application/json'},
-body:JSON.stringify({username:document.getElementById('u').value,password:document.getElementById('p').value})});
+try{var r=await fetch('/api/debug-staff',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:document.getElementById('n').value||'Lin'})});
 o.textContent=JSON.stringify(await r.json(),null,2);}catch(e){o.textContent='ERROR: '+e.message;}};</script>
 </body></html>`);
 });
-
 
 // ─────────────────────────────────────────────────────────────────────────────
 // DIAGNOSTIC ENDPOINT — dumps raw table structure for debugging
