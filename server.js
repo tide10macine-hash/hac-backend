@@ -15,7 +15,7 @@ const LOGIN_URL = `${HAC_BASE}/HomeAccess/Account/LogOn`;
 const RC_URL    = `${HAC_BASE}/HomeAccess/Content/Student/ReportCards.aspx`;
 const CW_URL    = `${HAC_BASE}/HomeAccess/Content/Student/Assignments.aspx`;
 const INFO_URL  = `${HAC_BASE}/HomeAccess/Content/Student/Registration.aspx`;
-const SCHED_URL = `${HAC_BASE}/HomeAccess/Content/Student/Schedule.aspx`;
+const SCHED_URL = `${HAC_BASE}/HomeAccess/Content/Student/Classes.aspx`;
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
 
 function makeClient() {
@@ -874,11 +874,12 @@ async function getTranscriptData(client) {
   return parseTranscript(tRes.data);
 }
 
-// "Lastname, Firstname" → "Firstname Lastname" (HAC stores names last-first).
+// "LASTNAME, FIRSTNAME" → "Firstname Lastname" (HAC stores names last-first, caps).
 function flipName(s) {
   s = (s || '').trim().replace(/\s+/g, ' ');
   const m = s.match(/^([^,]+),\s*(.+)$/);
-  return m ? (m[2].trim() + ' ' + m[1].trim()) : s;
+  const ordered = m ? (m[2].trim() + ' ' + m[1].trim()) : s;
+  return ordered.toLowerCase().replace(/\b[a-z]/g, c => c.toUpperCase());
 }
 
 // Parse the student's schedule into [{ course, teacher, email, period, room }].
