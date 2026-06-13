@@ -314,72 +314,63 @@ function parseLiveGrades(html) {
 // ─────────────────────────────────────────────────────────────────────────────
 // STUDENT INFO
 // ─────────────────────────────────────────────────────────────────────────────
-// The student's own text content (excluding nested children), whitespace-collapsed.
-function ownText($, el) {
-  return $(el).clone().children().remove().end().text().trim().replace(/\s+/g, ' ');
-}
-// HAC renders the name as "LASTNAME, FIRSTNAME [MIDDLE]" — a strong signal.
-const HAC_NAME_RE = /^[A-Z][A-Za-z.'\-]+,\s*[A-Z][A-Za-z.'\- ]+$/;
 
 function parseStudentInfo(html) {
   const $ = cheerio.load(html);
-  let name = '', grade = '', campus = '';
+  const clean = (t) => (t || '').trim().replace(/\s+/g, ' ');
+  // A caption like "Student Name:" / "Grade:" — never the real value.
+  const isLabel = (t) => !t || /:\s*$/.test(t) || t.length < 2;
 
-  // 1) Elements whose id clearly identifies the student name.
-  const nameIdRe = /regstudentname|studentname|student.*name|chooser.*name|banner.*name|lblname/i;
-  $('[id]').each((_, el) => {
-    if (name) return;
-    if (!nameIdRe.test($(el).attr('id') || '')) return;
-    const t = $(el).text().trim().replace(/\s+/g, ' ');
-    if (t && t.length >= 3 && t.length <= 60 && /[A-Za-z]/.test(t)) name = t;
-  });
+  // ── Frisco HAC Registration page exposes these exact ids (authoritative). ──
+  let name   = clean($('#plnMain_lblRegStudentName').text());
+  let grade  = clean($('#plnMain_lblGrade').text());
+  let campus = clean($('#plnMain_lblBuildingName').text());
 
-  // 2) HAC top banner / student chooser (present on every authenticated page).
-  if (!name) {
-    $('#sg-banner-chooser, .sg-banner-chooser, .sg-banner-chooser-current, [class*="chooser"], [class*="sg-banner"]').each((_, el) => {
+  // Generic id fallback for the NAME — skip any "...Label" caption element and
+  // any value that is itself a label (ends in ":").
+  if (isLabel(name)) {
+    name = '';
+    $('[id]').each((_, el) => {
       if (name) return;
-      const t = $(el).text().trim().replace(/\s+/g, ' ');
-      if (HAC_NAME_RE.test(t) && t.length <= 60) name = t;
+      const id = $(el).attr('id') || '';
+      if (/label$/i.test(id)) return;
+      if (!/regstudentname|lblstudentname|lblname/i.test(id)) return;
+      const t = clean($(el).text());
+      if (!isLabel(t) && t.length <= 60 && /[A-Za-z]/.test(t)) name = t;
     });
   }
 
-  // 3) "Student Name" label → adjacent value cell.
-  if (!name) {
-    $('td, th, label, span, div').each((_, el) => {
-      if (name) return;
-      if (ownText($, el).toLowerCase() !== 'student name') return;
-      const val = ($(el).closest('tr').find('td').last().text().trim()
-                || $(el).next().text().trim() || '').replace(/\s+/g, ' ');
-      if (val && val.length > 2 && val.length <= 60) name = val;
+  // Grade fallback
+  if (isLabel(grade)) {
+    grade = '';
+    $('[id]').each((_, el) => {
+      if (grade) return;
+      const id = $(el).attr('id') || '';
+      if (/label$/i.test(id)) return;
+      if (!/lblgrade$|gradelevel/i.test(id)) return;
+      const t = clean($(el).text());
+      if (!isLabel(t) && t.length < 30) grade = t;
     });
   }
 
-  // 4) Last resort: the first "Lastname, Firstname" string on the page.
-  if (!name) {
-    $('span, div, td, h1, h2, h3, a').each((_, el) => {
-      if (name) return;
-      const t = ownText($, el);
-      if (HAC_NAME_RE.test(t) && t.length <= 45) name = t;
+  // Campus fallback
+  if (isLabel(campus)) {
+    campus = '';
+    $('[id]').each((_, el) => {
+      if (campus) return;
+      const id = $(el).attr('id') || '';
+      if (/label$/i.test(id)) return;
+      if (!/buildingname|campus/i.test(id)) return;
+      const t = clean($(el).text());
+      if (!isLabel(t) && t.length > 2 && t.length < 50) campus = t;
     });
   }
 
-  // Grade level
-  $('[id]').each((_, el) => {
-    if (grade) return;
-    if (!/grade.*level|lblgrade|gradelevel/.test(($(el).attr('id') || '').toLowerCase())) return;
-    const t = $(el).text().trim();
-    if (t && t.length < 30) grade = t;
-  });
-
-  // Campus / building
-  $('[id]').each((_, el) => {
-    if (campus) return;
-    if (!/campus|building|school/.test(($(el).attr('id') || '').toLowerCase())) return;
-    const t = $(el).text().trim();
-    if (t && t.length > 2 && t.length < 50) campus = t;
-  });
-
-  return { name, grade, campus };
+  return {
+    name:   isLabel(name)   ? '' : name,
+    grade:  isLabel(grade)  ? '' : grade,
+    campus: isLabel(campus) ? '' : campus,
+  };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -460,16 +451,6 @@ async function getGradesData(client) {
       student = parseStudentInfo((await client.get(INFO_URL)).data);
     } catch (err) {
       console.error('[student info]', err.message);
-    }
-    // Fallback: the report card page (already loaded) carries the student name in
-    // its header banner — use it if the Registration page didn't yield one.
-    if (!student.name || !student.grade) {
-      try {
-        const s2 = parseStudentInfo(rcRes.data);
-        if (!student.name)   student.name   = s2.name;
-        if (!student.grade)  student.grade  = s2.grade;
-        if (!student.campus) student.campus = s2.campus;
-      } catch (_) { /* ignore */ }
     }
     console.log('[student]', JSON.stringify(student));
 
@@ -629,64 +610,6 @@ app.post('/api/bootstrap', async (req, res) => {
   res.json(out);
 });
 
-// ── DEBUG (temporary): find where HAC exposes the student name ────────────────
-function nameCandidates(html) {
-  const $ = cheerio.load(html);
-  const out = [];
-  const push = (src, t) => { t = (t || '').trim().replace(/\s+/g, ' '); if (t && t.length <= 70) out.push({ src, text: t }); };
-  push('title', $('title').text());
-  $('[id]').each((_, el) => {
-    const id = $(el).attr('id') || '';
-    if (/name|student|chooser|banner|grade|campus/i.test(id)) push('id:' + id, $(el).text());
-  });
-  $('[class]').each((_, el) => {
-    const c = $(el).attr('class') || '';
-    if (/chooser|banner|student|name/i.test(c)) push('class:' + c.split(/\s+/)[0], ownText($, el));
-  });
-  $('*').each((_, el) => {
-    if (out.length > 80) return;
-    const t = ownText($, el);
-    if (HAC_NAME_RE.test(t) && t.length <= 45) push('pattern', t);
-  });
-  const seen = new Set();
-  return out.filter(o => { const k = o.src + '|' + o.text; if (seen.has(k)) return false; seen.add(k); return true; }).slice(0, 40);
-}
-
-app.post('/api/debug-name', async (req, res) => {
-  const { username, password } = req.body || {};
-  if (!username || !password) return res.status(400).json({ error: 'creds required' });
-  const client = makeClient();
-  try {
-    await login(client, username, password);
-    const grab = async (url) => { try { const r = await client.get(url); return { parsed: parseStudentInfo(r.data), candidates: nameCandidates(r.data) }; } catch (e) { return { error: e.message }; } };
-    res.json({
-      registration: await grab(INFO_URL),
-      reportCard:   await grab(RC_URL),
-      assignments:  await grab(CW_URL),
-    });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
-});
-
-app.get('/debug-name', (_req, res) => {
-  res.set('Content-Type', 'text/html').send(`<!doctype html><html><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1"><title>Student Name Debug</title>
-<style>body{font:14px system-ui,sans-serif;margin:24px;max-width:920px;color:#111}
-input{padding:9px;margin:5px 0;width:280px;display:block;border:1px solid #ccc;border-radius:6px}
-button{padding:9px 18px;margin-top:10px;border:0;border-radius:6px;background:#3d5aff;color:#fff;font-size:14px;cursor:pointer}
-pre{white-space:pre-wrap;word-break:break-word;background:#0b1021;color:#bfe3ff;padding:14px;border-radius:8px;font-size:12px;margin-top:14px}</style>
-</head><body><h2>Find the Student Name</h2>
-<p>Runs against your account and shows where HAC exposes the name. Copy the whole result back to your developer.</p>
-<input id="u" placeholder="HAC username" autocomplete="off">
-<input id="p" type="password" placeholder="HAC password" autocomplete="off">
-<button id="go">Run</button><pre id="out">(results appear here)</pre>
-<script>document.getElementById('go').onclick=async function(){var o=document.getElementById('out');o.textContent='Running…';
-try{var r=await fetch('/api/debug-name',{method:'POST',headers:{'Content-Type':'application/json'},
-body:JSON.stringify({username:document.getElementById('u').value,password:document.getElementById('p').value})});
-o.textContent=JSON.stringify(await r.json(),null,2);}catch(e){o.textContent='ERROR: '+e.message;}};</script>
-</body></html>`);
-});
 
 // ─────────────────────────────────────────────────────────────────────────────
 // DIAGNOSTIC ENDPOINT — dumps raw table structure for debugging
