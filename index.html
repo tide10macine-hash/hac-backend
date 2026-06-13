@@ -73,8 +73,12 @@
     .teachers-sub { font-size:13px; color:var(--ink-3); margin-top:3px; }
     .teacher-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(290px,1fr)); gap:14px; }
     .teacher-card { background:var(--surface); border:1px solid var(--border); border-radius:var(--r-lg); padding:16px 18px;
-      display:flex; flex-direction:column; gap:12px; transition:border-color .15s, box-shadow .15s; }
+      display:flex; flex-direction:row; align-items:center; gap:14px; transition:border-color .15s, box-shadow .15s; }
     .teacher-card:hover { border-color:var(--border-2); box-shadow:0 6px 22px rgba(13,15,18,.07); }
+    .tc-left { display:flex; flex-direction:column; gap:11px; min-width:0; flex:1; }
+    .tc-photo { width:66px; height:66px; border-radius:14px; object-fit:cover; flex-shrink:0;
+      background:var(--surface-2); border:1px solid var(--border); }
+    .tc-photo-ph { display:flex; align-items:center; justify-content:center; color:var(--ink-4); }
     .tc-name { font-size:15.5px; font-weight:700; color:var(--ink); letter-spacing:-.01em; }
     .tc-class { font-size:12.5px; font-weight:500; color:var(--ink-3); margin-top:2px; }
     .tc-email { display:inline-flex; align-items:center; gap:8px; font-size:13px; font-weight:600; color:var(--accent);
@@ -598,6 +602,7 @@
 
   /* ── Contact Teachers ── */
   const _mailSvg = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-10 6L2 7"/></svg>';
+  const _photoPh = '<div class="tc-photo tc-photo-ph"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v1"/></svg></div>';
   function _esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c])); }
   function renderTeachers(list) {
     const el = document.getElementById('teachers-list');
@@ -613,8 +618,11 @@
       const mail = email
         ? '<a class="tc-email" href="mailto:' + _esc(email) + '">' + _mailSvg + _esc(email) + '</a>'
         : '<span class="tc-email disabled">' + _mailSvg + 'No email listed</span>';
-      return '<div class="teacher-card"><div><div class="tc-name">' + _esc(t.teacher || 'Teacher') +
-             '</div><div class="tc-class">' + _esc(cls) + '</div></div>' + mail + '</div>';
+      const photo = t.photo
+        ? '<img class="tc-photo" src="' + _esc(t.photo) + '" alt="' + _esc(t.teacher || '') + '" loading="lazy" referrerpolicy="no-referrer" onerror="this.style.display=\'none\'">'
+        : _photoPh;
+      return '<div class="teacher-card"><div class="tc-left"><div class="tc-name">' + _esc(t.teacher || 'Teacher') +
+             '</div><div class="tc-class">' + _esc(cls) + '</div>' + mail + '</div>' + photo + '</div>';
     };
     el.innerHTML = '<div class="teacher-grid">' + list.map(card).join('') + '</div>';
   }
@@ -969,10 +977,10 @@
   document.getElementById('btn-demo').addEventListener('click', () => {
     _hacUser = '__demo__'; _hacPass = '__demo__'; _transcriptLoaded = false;
     _teachers = [
-      { course:'AP Calculus AB',        teacher:'Daniel Reed',    email:'daniel.reed@friscoisd.org',    period:'1' },
-      { course:'AP Computer Science A',  teacher:'Maria Gonzalez', email:'maria.gonzalez@friscoisd.org', period:'3' },
-      { course:'AP World History',       teacher:'James Carter',   email:'james.carter@friscoisd.org',   period:'6' },
-      { course:'English 2 Adv',          teacher:'Sarah Kim',      email:'sarah.kim@friscoisd.org',      period:'2' },
+      { course:'AP Calculus AB',        teacher:'Daniel Reed',    email:'daniel.reed@friscoisd.org',    period:'1', photo:'https://i.pravatar.cc/150?img=12' },
+      { course:'AP Computer Science A',  teacher:'Maria Gonzalez', email:'maria.gonzalez@friscoisd.org', period:'3', photo:'https://i.pravatar.cc/150?img=45' },
+      { course:'AP World History',       teacher:'James Carter',   email:'james.carter@friscoisd.org',   period:'6', photo:'https://i.pravatar.cc/150?img=33' },
+      { course:'English 2 Adv',          teacher:'Sarah Kim',      email:'sarah.kim@friscoisd.org',      period:'2', photo:'https://i.pravatar.cc/150?img=27' },
       { course:'AP Biology',             teacher:'Olivia Brooks',  email:'olivia.brooks@friscoisd.org',  period:'2' },
     ];
     showDash('Alex Rivera', 'Grade 10', [

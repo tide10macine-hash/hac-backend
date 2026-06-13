@@ -618,6 +618,12 @@ app.post('/api/bootstrap', async (req, res) => {
     out.errors.transcript = transcriptR.reason?.message || 'failed';
   }
 
+  // Match teachers to their staff-directory photos (by email). Best-effort.
+  if (out.teachers && out.teachers.length) {
+    const campus = (gradesR.status === 'fulfilled' && gradesR.value.student && gradesR.value.student.campus) || '';
+    try { await attachTeacherPhotos(out.teachers, campus); } catch (_) { /* photos optional */ }
+  }
+
   res.json(out);
 });
 
@@ -628,104 +634,13 @@ app.post('/api/teachers', async (req, res) => {
   const client = makeClient();
   try {
     await login(client, username, password);
-    res.json({ teachers: await getTeachersData(client) });
+    const teachers = await getTeachersData(client);
+    try { await attachTeacherPhotos(teachers); } catch (_) { /* photos optional */ }
+    res.json({ teachers });
   } catch (err) {
     const status = err.message?.includes('username or password') ? 401 : 500;
     res.status(status).json({ error: err.message });
   }
-});
-
-// ── DEBUG (temporary): find the staff directory's data feed (photos via JS) ───
-app.post('/api/debug-staff', async (req, res) => {
-  const client = makeClient();
-  const get = async (url) => {
-    try {
-      const r = await client.get(url, { headers: { 'User-Agent': UA, Accept: '*/*' }, maxRedirects: 5, validateStatus: () => true });
-      return { status: r.status, finalUrl: r.request?.res?.responseUrl, body: String(r.data) };
-    } catch (e) { return { error: e.message }; }
-  };
-  try {
-    const out = {};
-
-    // 1) The staff page itself — inline config + data-* attributes + candidate URLs.
-    const page = await get(STAFF_DIR);
-    out.page = { status: page.status, len: (page.body || '').length, error: page.error };
-    if (page.body) {
-      const $ = cheerio.load(page.body);
-      const inline = [];
-      $('script:not([src])').each((_, s) => {
-        const t = ($(s).html() || '').trim();
-        if (t && /campus|staff|const|api|var |id/i.test(t)) inline.push(t.slice(0, 900));
-      });
-      const dataAttrs = [];
-      $('[id*="staff" i], [class*="staff" i], [data-campus], [data-endpoint], [data-url], [data-constituent]').each((_, el) => {
-        if (dataAttrs.length >= 12) return;
-        const a = el.attribs || {};
-        dataAttrs.push({ tag: el.tagName, id: a.id, cls: a.class, data: Object.fromEntries(Object.entries(a).filter(([k]) => k.startsWith('data-'))) });
-      });
-      out.page.inlineScripts = inline.slice(0, 6);
-      out.page.dataAttrs = dataAttrs;
-      out.page.candidateUrls = [...new Set((page.body.match(/https?:\/\/[^\s"'<>]+|\/[A-Za-z0-9_\-\/.?=&%]+/g) || [])
-        .filter(u => /staff|directory|constituent|api|\.json|search/i.test(u)))].slice(0, 25);
-    }
-
-    // 2) staff.js — show how the campus/directory params are derived.
-    const sj = await get('https://static.friscoisd.org/js/schools/global/staff.js');
-    out.staffJs = { status: sj.status, len: (sj.body || '').length, error: sj.error };
-    if (sj.body) {
-      out.staffJs.head = sj.body.slice(0, 1400);
-      const gi = sj.body.indexOf('CampusStaffDirectory');
-      if (gi >= 0) out.staffJs.aroundGet = sj.body.slice(Math.max(0, gi - 900), gi + 300).replace(/\s+/g, ' ');
-      // any campus/directory variable hints
-      out.staffJs.campusHints = [...new Set((sj.body.match(/(?:campus|directory)\s*[=:][^;\n]{0,80}/gi) || []))].slice(0, 20);
-    }
-
-    // 3) Try the API directly with candidate Reedy params to find the working combo.
-    const combos = [
-      { campus: 'reedy-high-school', directory: 'staff' },
-      { campus: 'reedy', directory: 'staff' },
-      { campus: 'Reedy High School', directory: 'staff' },
-      { campus: 'reedy-high-school', directory: 'Staff' },
-      { campus: 'reedy-high-school', directory: 'all' },
-      { campus: 'reedyhighschool', directory: 'staff' },
-    ];
-    out.apiTries = [];
-    for (const c of combos) {
-      const url = `https://resources.friscoisd.org/api/CampusStaffDirectory/directory?campus=${encodeURIComponent(c.campus)}&directory=${encodeURIComponent(c.directory)}&pow=false`;
-      const r = await get(url);
-      let arr = null;
-      try { arr = JSON.parse(r.body); } catch (_) {}
-      out.apiTries.push({
-        campus: c.campus, directory: c.directory, status: r.status,
-        isArray: Array.isArray(arr), count: Array.isArray(arr) ? arr.length : 0,
-        firstKeys: Array.isArray(arr) && arr[0] ? Object.keys(arr[0]) : [],
-        sample: Array.isArray(arr) && arr[0]
-          ? { FirstName: arr[0].FirstName, LastName: arr[0].LastName, Email: arr[0].Email, Photo: arr[0].Photo, Dept: arr[0].Dept }
-          : (r.body || '').slice(0, 120),
-      });
-    }
-
-    res.json(out);
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
-});
-
-app.get('/debug-staff', (_req, res) => {
-  res.set('Content-Type', 'text/html').send(`<!doctype html><html><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1"><title>Staff Directory Debug</title>
-<style>body{font:14px system-ui,sans-serif;margin:24px;max-width:920px}
-input{padding:9px;margin:5px 0;width:280px;display:block;border:1px solid #ccc;border-radius:6px}
-button{padding:9px 18px;margin-top:10px;border:0;border-radius:6px;background:#3d5aff;color:#fff;font-size:14px;cursor:pointer}
-pre{white-space:pre-wrap;word-break:break-word;background:#0b1021;color:#bfe3ff;padding:14px;border-radius:8px;font-size:12px;margin-top:14px}</style>
-</head><body><h2>Reedy Staff Directory — structure probe</h2>
-<p>Enter one of your teachers' last names (e.g. Lin) and run. Paste the result back to your developer.</p>
-<input id="n" placeholder="teacher last name (e.g. Lin)" autocomplete="off">
-<button id="go">Run</button><pre id="out">(results appear here)</pre>
-<script>document.getElementById('go').onclick=async function(){var o=document.getElementById('out');o.textContent='Running…';
-try{var r=await fetch('/api/debug-staff',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:document.getElementById('n').value||'Lin'})});
-o.textContent=JSON.stringify(await r.json(),null,2);}catch(e){o.textContent='ERROR: '+e.message;}};</script>
-</body></html>`);
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -976,6 +891,69 @@ async function getTeachersData(client) {
     headers: { Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8' },
   });
   return parseTeachers(r.data);
+}
+
+// ── Teacher photos from the Frisco campus staff directory API ────────────────
+// staff.js loads the directory from:
+//   resources.friscoisd.org/api/CampusStaffDirectory/directory?campus=&directory=&pow=false
+// → [{ FirstName, LastName, Email, Photo, Dept, ... }]. We match teachers by
+// email (reliable), falling back to name. The campus param format isn't fixed,
+// so we try candidates and accept the first that returns staff with photos.
+const STAFF_API = process.env.STAFF_API || 'https://resources.friscoisd.org/api/CampusStaffDirectory/directory';
+let _staffDirCache = null; // { ts, byEmail, byName }
+
+function _normName(s) { return (s || '').toLowerCase().replace(/[^a-z]+/g, ' ').trim(); }
+
+function campusCandidates(campusName) {
+  const list = ['reedy-high-school', 'reedy', 'reedyhighschool', 'Reedy High School'];
+  const c = (campusName || '').trim();
+  if (c) {
+    list.unshift(c, c.toLowerCase().replace(/\s+/g, '-'), c.toLowerCase().split(/\s+/)[0], c.toLowerCase().replace(/\s+/g, ''));
+  }
+  return [...new Set(list.filter(Boolean))];
+}
+
+async function fetchStaffDirectory(campusName) {
+  if (_staffDirCache && Date.now() - _staffDirCache.ts < 6 * 3600 * 1000) return _staffDirCache;
+  for (const campus of campusCandidates(campusName)) {
+    for (const directory of ['staff', 'Staff']) {
+      try {
+        const r = await axios.get(STAFF_API, {
+          params: { campus, directory, pow: false }, timeout: 12000,
+          headers: { 'User-Agent': UA, Accept: 'application/json, text/plain, */*' }, validateStatus: () => true,
+        });
+        let arr = r.data;
+        if (typeof arr === 'string') { try { arr = JSON.parse(arr); } catch { arr = null; } }
+        if (!Array.isArray(arr) || !arr.some(s => s && s.Email && s.Photo)) continue;
+        const byEmail = {}, byName = {};
+        arr.forEach(s => {
+          if (!s || !s.Photo) return;
+          if (s.Email) byEmail[String(s.Email).toLowerCase().trim()] = s.Photo;
+          const nm = _normName((s.FirstName || '') + ' ' + (s.LastName || ''));
+          if (nm) byName[nm] = s.Photo;
+        });
+        _staffDirCache = { ts: Date.now(), byEmail, byName };
+        console.log(`[staff] directory loaded (campus=${campus}, ${arr.length} staff)`);
+        return _staffDirCache;
+      } catch (_) { /* try next combo */ }
+    }
+  }
+  console.warn('[staff] no working directory combo found');
+  return null;
+}
+
+async function attachTeacherPhotos(teachers, campusName) {
+  if (!teachers || !teachers.length) return teachers;
+  let dir = null;
+  try { dir = await fetchStaffDirectory(campusName); } catch (_) { dir = null; }
+  if (!dir) return teachers;
+  teachers.forEach(t => {
+    const email = (t.email || '').toLowerCase().trim();
+    let photo = email && dir.byEmail[email];
+    if (!photo) { const nm = _normName(t.teacher); if (nm && dir.byName[nm]) photo = dir.byName[nm]; }
+    if (photo) t.photo = photo;
+  });
+  return teachers;
 }
 
 app.post('/api/transcript', async (req, res) => {
