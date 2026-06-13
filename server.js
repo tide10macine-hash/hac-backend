@@ -669,6 +669,25 @@ app.post('/api/debug-name', async (req, res) => {
   }
 });
 
+app.get('/debug-name', (_req, res) => {
+  res.set('Content-Type', 'text/html').send(`<!doctype html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Student Name Debug</title>
+<style>body{font:14px system-ui,sans-serif;margin:24px;max-width:920px;color:#111}
+input{padding:9px;margin:5px 0;width:280px;display:block;border:1px solid #ccc;border-radius:6px}
+button{padding:9px 18px;margin-top:10px;border:0;border-radius:6px;background:#3d5aff;color:#fff;font-size:14px;cursor:pointer}
+pre{white-space:pre-wrap;word-break:break-word;background:#0b1021;color:#bfe3ff;padding:14px;border-radius:8px;font-size:12px;margin-top:14px}</style>
+</head><body><h2>Find the Student Name</h2>
+<p>Runs against your account and shows where HAC exposes the name. Copy the whole result back to your developer.</p>
+<input id="u" placeholder="HAC username" autocomplete="off">
+<input id="p" type="password" placeholder="HAC password" autocomplete="off">
+<button id="go">Run</button><pre id="out">(results appear here)</pre>
+<script>document.getElementById('go').onclick=async function(){var o=document.getElementById('out');o.textContent='Running…';
+try{var r=await fetch('/api/debug-name',{method:'POST',headers:{'Content-Type':'application/json'},
+body:JSON.stringify({username:document.getElementById('u').value,password:document.getElementById('p').value})});
+o.textContent=JSON.stringify(await r.json(),null,2);}catch(e){o.textContent='ERROR: '+e.message;}};</script>
+</body></html>`);
+});
+
 // ─────────────────────────────────────────────────────────────────────────────
 // DIAGNOSTIC ENDPOINT — dumps raw table structure for debugging
 // ─────────────────────────────────────────────────────────────────────────────
