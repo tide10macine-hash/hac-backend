@@ -643,6 +643,69 @@ app.post('/api/teachers', async (req, res) => {
   }
 });
 
+// ── DEBUG (temporary): why aren't teacher photos matching? ────────────────────
+app.post('/api/debug-staff', async (req, res) => {
+  const { username, password } = req.body || {};
+  if (!username || !password) return res.status(400).json({ error: 'creds required' });
+  const client = makeClient();
+  try {
+    await login(client, username, password);
+    const teachers = await getTeachersData(client);
+    const wantEmails = teachers.map(t => (t.email || '').toLowerCase().trim()).filter(Boolean);
+    let campus = '';
+    try { campus = (parseStudentInfo((await client.get(INFO_URL)).data).campus) || ''; } catch (_) {}
+
+    const combos = [];
+    for (const c of campusCandidates(campus)) for (const d of ['staff', 'Staff']) combos.push({ campus: c, directory: d });
+
+    const tries = [];
+    for (const cmb of combos.slice(0, 14)) {
+      const url = `${STAFF_API}?campus=${encodeURIComponent(cmb.campus)}&directory=${encodeURIComponent(cmb.directory)}&pow=false`;
+      const info = { campus: cmb.campus, directory: cmb.directory };
+      try {
+        const r = await axios.get(url, { timeout: 12000, headers: { 'User-Agent': UA, Accept: 'application/json, text/plain, */*' }, validateStatus: () => true });
+        let arr = r.data;
+        if (typeof arr === 'string') { try { arr = JSON.parse(arr); } catch (_) { arr = null; } }
+        info.status = r.status;
+        info.contentType = r.headers['content-type'];
+        info.isArray = Array.isArray(arr);
+        info.count = Array.isArray(arr) ? arr.length : 0;
+        if (Array.isArray(arr) && arr[0]) {
+          info.firstKeys = Object.keys(arr[0]);
+          info.sample = { FirstName: arr[0].FirstName, LastName: arr[0].LastName, Email: arr[0].Email, Photo: arr[0].Photo };
+          const emails = new Set(arr.map(s => String(s.Email || '').toLowerCase().trim()));
+          info.matchedTeacherEmails = wantEmails.filter(e => emails.has(e));
+        } else {
+          info.bodyHead = (typeof r.data === 'string' ? r.data : JSON.stringify(r.data)).slice(0, 200);
+        }
+      } catch (e) { info.error = e.message; }
+      tries.push(info);
+      if (info.count > 0) break;
+    }
+    res.json({ staffApi: STAFF_API, campusFromRegistration: campus, teacherEmails: wantEmails, tries });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.get('/debug-staff', (_req, res) => {
+  res.set('Content-Type', 'text/html').send(`<!doctype html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Staff Photos Debug</title>
+<style>body{font:14px system-ui,sans-serif;margin:24px;max-width:920px}
+input{padding:9px;margin:5px 0;width:280px;display:block;border:1px solid #ccc;border-radius:6px}
+button{padding:9px 18px;margin-top:10px;border:0;border-radius:6px;background:#3d5aff;color:#fff;font-size:14px;cursor:pointer}
+pre{white-space:pre-wrap;word-break:break-word;background:#0b1021;color:#bfe3ff;padding:14px;border-radius:8px;font-size:12px;margin-top:14px}</style>
+</head><body><h2>Teacher Photos — why not matching?</h2>
+<p>Enter your HAC login and run. Paste the result back to your developer.</p>
+<input id="u" placeholder="HAC username" autocomplete="off">
+<input id="p" type="password" placeholder="HAC password" autocomplete="off">
+<button id="go">Run</button><pre id="out">(results appear here)</pre>
+<script>document.getElementById('go').onclick=async function(){var o=document.getElementById('out');o.textContent='Running…';
+try{var r=await fetch('/api/debug-staff',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:document.getElementById('u').value,password:document.getElementById('p').value})});
+o.textContent=JSON.stringify(await r.json(),null,2);}catch(e){o.textContent='ERROR: '+e.message;}};</script>
+</body></html>`);
+});
+
 // ─────────────────────────────────────────────────────────────────────────────
 // DIAGNOSTIC ENDPOINT — dumps raw table structure for debugging
 // ─────────────────────────────────────────────────────────────────────────────
