@@ -15,6 +15,7 @@ const LOGIN_URL = `${HAC_BASE}/HomeAccess/Account/LogOn`;
 const RC_URL    = `${HAC_BASE}/HomeAccess/Content/Student/ReportCards.aspx`;
 const CW_URL    = `${HAC_BASE}/HomeAccess/Content/Student/Assignments.aspx`;
 const INFO_URL  = `${HAC_BASE}/HomeAccess/Content/Student/Registration.aspx`;
+const SCHED_URL = `${HAC_BASE}/HomeAccess/Content/Student/Schedule.aspx`;
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
 
 function makeClient() {
@@ -572,13 +573,22 @@ app.post('/api/bootstrap', async (req, res) => {
     return res.status(status).json({ error: err.message || 'Login failed.' });
   }
 
-  const [gradesR, assignR, transcriptR] = await Promise.allSettled([
+  const [gradesR, assignR, transcriptR, teachersR] = await Promise.allSettled([
     getGradesData(client),
     getAssignmentsData(client),
     getTranscriptData(client),
+    getTeachersData(client),
   ]);
 
   const out = { errors: {} };
+
+  if (teachersR.status === 'fulfilled') {
+    out.teachers = teachersR.value;
+  } else {
+    console.error('[bootstrap] teachers:', teachersR.reason?.message);
+    out.teachers = [];
+    out.errors.teachers = teachersR.reason?.message || 'failed';
+  }
 
   if (gradesR.status === 'fulfilled') {
     out.student = gradesR.value.student;
@@ -608,6 +618,71 @@ app.post('/api/bootstrap', async (req, res) => {
   }
 
   res.json(out);
+});
+
+app.post('/api/teachers', async (req, res) => {
+  const { username, password } = req.body || {};
+  if (!username || !password)
+    return res.status(400).json({ error: 'Username and password required.' });
+  const client = makeClient();
+  try {
+    await login(client, username, password);
+    res.json({ teachers: await getTeachersData(client) });
+  } catch (err) {
+    const status = err.message?.includes('username or password') ? 401 : 500;
+    res.status(status).json({ error: err.message });
+  }
+});
+
+// ── DEBUG (temporary): locate teacher names + emails on the schedule page ─────
+app.post('/api/debug-teachers', async (req, res) => {
+  const { username, password } = req.body || {};
+  if (!username || !password) return res.status(400).json({ error: 'creds required' });
+  const client = makeClient();
+  const dump = (html) => {
+    const $ = cheerio.load(html);
+    const mailtos = [];
+    $('a[href^="mailto:" i]').each((_, a) => { if (mailtos.length < 20) mailtos.push({ text: $(a).text().trim(), href: $(a).attr('href') }); });
+    const tables = [];
+    $('table').each((_, t) => {
+      if (tables.length >= 6) return;
+      const rows = $(t).find('tr');
+      const header = rows.first().find('th,td').map((_, c) => $(c).text().trim()).get();
+      const sample = rows.slice(1, 3).map((_, r) => $(r).find('td').map((_, c) => $(c).text().trim().replace(/\s+/g,' ').slice(0,40)).get()).get();
+      if (header.length) tables.push({ header, sample });
+    });
+    return { mailtoCount: mailtos.length, mailtos, tables };
+  };
+  try {
+    await login(client, username, password);
+    const sched = await client.get(SCHED_URL).then(r => r.data).catch(e => 'ERR:' + e.message);
+    const cw    = await client.get(CW_URL).then(r => r.data).catch(e => 'ERR:' + e.message);
+    res.json({
+      schedule:    typeof sched === 'string' && sched.startsWith('ERR:') ? { error: sched } : { parsed: parseTeachers(sched), ...dump(sched) },
+      assignments: typeof cw === 'string' && cw.startsWith('ERR:') ? { error: cw } : dump(cw),
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.get('/debug-teachers', (_req, res) => {
+  res.set('Content-Type', 'text/html').send(`<!doctype html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Teachers Debug</title>
+<style>body{font:14px system-ui,sans-serif;margin:24px;max-width:920px;color:#111}
+input{padding:9px;margin:5px 0;width:280px;display:block;border:1px solid #ccc;border-radius:6px}
+button{padding:9px 18px;margin-top:10px;border:0;border-radius:6px;background:#3d5aff;color:#fff;font-size:14px;cursor:pointer}
+pre{white-space:pre-wrap;word-break:break-word;background:#0b1021;color:#bfe3ff;padding:14px;border-radius:8px;font-size:12px;margin-top:14px}</style>
+</head><body><h2>Find Teachers + Emails</h2>
+<p>Shows the schedule + assignments structure so the teacher list can be wired exactly. Copy the result back to your developer.</p>
+<input id="u" placeholder="HAC username" autocomplete="off">
+<input id="p" type="password" placeholder="HAC password" autocomplete="off">
+<button id="go">Run</button><pre id="out">(results appear here)</pre>
+<script>document.getElementById('go').onclick=async function(){var o=document.getElementById('out');o.textContent='Running…';
+try{var r=await fetch('/api/debug-teachers',{method:'POST',headers:{'Content-Type':'application/json'},
+body:JSON.stringify({username:document.getElementById('u').value,password:document.getElementById('p').value})});
+o.textContent=JSON.stringify(await r.json(),null,2);}catch(e){o.textContent='ERROR: '+e.message;}};</script>
+</body></html>`);
 });
 
 
@@ -781,6 +856,83 @@ async function getTranscriptData(client) {
     headers: { Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8' },
   });
   return parseTranscript(tRes.data);
+}
+
+// "Lastname, Firstname" → "Firstname Lastname" (HAC stores names last-first).
+function flipName(s) {
+  s = (s || '').trim().replace(/\s+/g, ' ');
+  const m = s.match(/^([^,]+),\s*(.+)$/);
+  return m ? (m[2].trim() + ' ' + m[1].trim()) : s;
+}
+
+// Parse the student's schedule into [{ course, teacher, email, period, room }].
+// Works off the schedule table's header labels, so column order doesn't matter,
+// and pulls the teacher email from a mailto link when present.
+function parseTeachers(html) {
+  const $ = cheerio.load(html);
+  const out = [];
+  const seen = new Set();
+
+  $('table').each((_, tbl) => {
+    const $tbl = $(tbl);
+    const headers = $tbl.find('tr').first().find('th, td')
+      .map((_, c) => $(c).text().trim().toLowerCase()).get();
+    if (!headers.length) return;
+    const idx = (re) => headers.findIndex(h => re.test(h));
+    const tIdx = idx(/teacher|staff|instructor/);
+    if (tIdx < 0) return; // not the schedule table
+
+    let cIdx = idx(/description|course\s*name|course\s*title/);  // prefer the readable name
+    if (cIdx < 0) cIdx = idx(/^course$|^class$|subject/);        // fall back to the code column
+    const pIdx = idx(/period/);
+    const rIdx = idx(/room/);
+
+    $tbl.find('tr').each((ri, row) => {
+      if (ri === 0) return;
+      const $cells = $(row).find('td');
+      if ($cells.length <= tIdx) return;
+      const cellAt = (i) => (i >= 0 && i < $cells.length) ? $($cells[i]) : null;
+
+      const $t = cellAt(tIdx);
+      let teacher = ($t ? $t.text().trim() : '').replace(/\s+/g, ' ');
+      let email = '';
+      const $mail = ($t || $(row)).find('a[href^="mailto:" i]').first();
+      if ($mail.length) {
+        email = ($mail.attr('href') || '').replace(/^mailto:/i, '').trim();
+        if (!teacher) teacher = $mail.text().trim();
+      }
+      if (!teacher || /^teacher$/i.test(teacher)) return;
+
+      let course = cIdx >= 0 && cellAt(cIdx) ? cellAt(cIdx).text().trim() : '';
+      if (!course) { // fallback: the longest text cell that isn't teacher/room/period
+        let best = '';
+        $cells.each((i, c) => {
+          if (i === tIdx || i === rIdx || i === pIdx) return;
+          const t = $(c).text().trim();
+          if (t.length > best.length && /[A-Za-z]{3}/.test(t)) best = t;
+        });
+        course = best;
+      }
+      course = cleanName(course.replace(/\s+/g, ' ')) || course.replace(/\s+/g, ' ');
+
+      const period = pIdx >= 0 && cellAt(pIdx) ? cellAt(pIdx).text().trim() : '';
+      const room   = rIdx >= 0 && cellAt(rIdx) ? cellAt(rIdx).text().trim() : '';
+
+      const key = teacher + '|' + course;
+      if (seen.has(key)) return;
+      seen.add(key);
+      out.push({ course, teacher: flipName(teacher), email, period, room });
+    });
+  });
+
+  return out;
+}
+
+async function getTeachersData(client) {
+  const r = await client.get(SCHED_URL, {
+    headers: { Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8' },
+  });
+  return parseTeachers(r.data);
 }
 
 app.post('/api/transcript', async (req, res) => {
