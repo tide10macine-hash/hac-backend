@@ -658,8 +658,32 @@ app.post('/api/debug-staff', async (req, res) => {
     const combos = [];
     for (const c of campusCandidates(campus)) for (const d of ['staff', 'Staff']) combos.push({ campus: c, directory: d });
 
+    // (A) Read how staff.js builds the campus/directory params.
+    const staffJs = {};
+    try {
+      const sj = await axios.get('https://static.friscoisd.org/js/schools/global/staff.js', { headers: { 'User-Agent': UA }, timeout: 12000, validateStatus: () => true });
+      const body = String(sj.data);
+      const gi = body.indexOf('CampusStaffDirectory');
+      staffJs.aroundGet = gi >= 0 ? body.slice(Math.max(0, gi - 1200), gi + 200).replace(/\s+/g, ' ') : 'not found';
+      staffJs.varAssigns = [...new Set((body.match(/(?:var|let|const)\s+(?:c|d|campus|directory)\b[^;]{0,90}/g) || []))].slice(0, 20);
+      staffJs.pathnameUse = [...new Set((body.match(/(?:location|pathname|getAttribute|data-|\.attr\()[^;{]{0,80}/g) || []))].slice(0, 20);
+    } catch (e) { staffJs.error = e.message; }
+
+    // (B) Inline scripts on the staff page (campus often set here).
+    let pageInline = [];
+    try {
+      const pg = await axios.get(STAFF_DIR, { headers: { 'User-Agent': UA }, timeout: 12000, validateStatus: () => true });
+      const $ = cheerio.load(String(pg.data));
+      $('script:not([src])').each((_, s) => { const t = ($(s).html() || '').trim(); if (t) pageInline.push(t.slice(0, 500)); });
+      pageInline = pageInline.slice(0, 8);
+    } catch (e) { pageInline = ['err:' + e.message]; }
+
+    // (C) Try API candidates; only stop on REAL data (a record with an Email).
+    const extra = ['reedy', 'high-school/reedy', 'reedy-hs', 'rhs', 'reedy_high_school'];
+    const combos = [];
+    for (const c of [...new Set([...campusCandidates(campus), ...extra])]) for (const d of ['staff', 'Staff']) combos.push({ campus: c, directory: d });
     const tries = [];
-    for (const cmb of combos.slice(0, 14)) {
+    for (const cmb of combos.slice(0, 22)) {
       const url = `${STAFF_API}?campus=${encodeURIComponent(cmb.campus)}&directory=${encodeURIComponent(cmb.directory)}&pow=false`;
       const info = { campus: cmb.campus, directory: cmb.directory };
       try {
@@ -667,22 +691,22 @@ app.post('/api/debug-staff', async (req, res) => {
         let arr = r.data;
         if (typeof arr === 'string') { try { arr = JSON.parse(arr); } catch (_) { arr = null; } }
         info.status = r.status;
-        info.contentType = r.headers['content-type'];
-        info.isArray = Array.isArray(arr);
         info.count = Array.isArray(arr) ? arr.length : 0;
-        if (Array.isArray(arr) && arr[0]) {
-          info.firstKeys = Object.keys(arr[0]);
-          info.sample = { FirstName: arr[0].FirstName, LastName: arr[0].LastName, Email: arr[0].Email, Photo: arr[0].Photo };
+        info.realCount = Array.isArray(arr) ? arr.filter(s => s && s.Email).length : 0;
+        if (Array.isArray(arr) && arr.length) {
+          info.errors = [...new Set(arr.map(s => s && s.Error).filter(Boolean))].slice(0, 2);
+          const first = arr.find(s => s && s.Email) || arr[0];
+          info.sample = { FirstName: first.FirstName, LastName: first.LastName, Email: first.Email, Photo: first.Photo };
           const emails = new Set(arr.map(s => String(s.Email || '').toLowerCase().trim()));
-          info.matchedTeacherEmails = wantEmails.filter(e => emails.has(e));
+          info.matched = wantEmails.filter(e => emails.has(e));
         } else {
-          info.bodyHead = (typeof r.data === 'string' ? r.data : JSON.stringify(r.data)).slice(0, 200);
+          info.bodyHead = (typeof r.data === 'string' ? r.data : JSON.stringify(r.data)).slice(0, 160);
         }
       } catch (e) { info.error = e.message; }
       tries.push(info);
-      if (info.count > 0) break;
+      if (info.realCount > 0) break;
     }
-    res.json({ staffApi: STAFF_API, campusFromRegistration: campus, teacherEmails: wantEmails, tries });
+    res.json({ staffApi: STAFF_API, campusFromRegistration: campus, teacherEmails: wantEmails, staffJs, pageInline, tries });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
