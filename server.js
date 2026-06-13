@@ -314,27 +314,70 @@ function parseLiveGrades(html) {
 // ─────────────────────────────────────────────────────────────────────────────
 // STUDENT INFO
 // ─────────────────────────────────────────────────────────────────────────────
+// The student's own text content (excluding nested children), whitespace-collapsed.
+function ownText($, el) {
+  return $(el).clone().children().remove().end().text().trim().replace(/\s+/g, ' ');
+}
+// HAC renders the name as "LASTNAME, FIRSTNAME [MIDDLE]" — a strong signal.
+const HAC_NAME_RE = /^[A-Z][A-Za-z.'\-]+,\s*[A-Z][A-Za-z.'\- ]+$/;
+
 function parseStudentInfo(html) {
   const $ = cheerio.load(html);
   let name = '', grade = '', campus = '';
 
+  // 1) Elements whose id clearly identifies the student name.
+  const nameIdRe = /regstudentname|studentname|student.*name|chooser.*name|banner.*name|lblname/i;
   $('[id]').each((_, el) => {
-    const id = ($(el).attr('id') || '').toLowerCase();
-    const t  = $(el).text().trim();
-    if (!t || t.length > 80) return;
-    if (!name && /student.*name|reg.*name|lblname/.test(id)) name = t;
-    if (!grade && /grade.*level|lblgrade/.test(id)) grade = t;
-    if (!campus && /campus|school|building/.test(id) && t.length > 2 && t.length < 60) campus = t;
+    if (name) return;
+    if (!nameIdRe.test($(el).attr('id') || '')) return;
+    const t = $(el).text().trim().replace(/\s+/g, ' ');
+    if (t && t.length >= 3 && t.length <= 60 && /[A-Za-z]/.test(t)) name = t;
   });
 
+  // 2) HAC top banner / student chooser (present on every authenticated page).
   if (!name) {
-    $('td, th, label, span').each((_, el) => {
-      if ($(el).text().trim().toLowerCase() === 'student name') {
-        const val = $(el).closest('tr').find('td').last().text().trim();
-        if (val && val.length > 2) { name = val; return false; }
-      }
+    $('#sg-banner-chooser, .sg-banner-chooser, .sg-banner-chooser-current, [class*="chooser"], [class*="sg-banner"]').each((_, el) => {
+      if (name) return;
+      const t = $(el).text().trim().replace(/\s+/g, ' ');
+      if (HAC_NAME_RE.test(t) && t.length <= 60) name = t;
     });
   }
+
+  // 3) "Student Name" label → adjacent value cell.
+  if (!name) {
+    $('td, th, label, span, div').each((_, el) => {
+      if (name) return;
+      if (ownText($, el).toLowerCase() !== 'student name') return;
+      const val = ($(el).closest('tr').find('td').last().text().trim()
+                || $(el).next().text().trim() || '').replace(/\s+/g, ' ');
+      if (val && val.length > 2 && val.length <= 60) name = val;
+    });
+  }
+
+  // 4) Last resort: the first "Lastname, Firstname" string on the page.
+  if (!name) {
+    $('span, div, td, h1, h2, h3, a').each((_, el) => {
+      if (name) return;
+      const t = ownText($, el);
+      if (HAC_NAME_RE.test(t) && t.length <= 45) name = t;
+    });
+  }
+
+  // Grade level
+  $('[id]').each((_, el) => {
+    if (grade) return;
+    if (!/grade.*level|lblgrade|gradelevel/.test(($(el).attr('id') || '').toLowerCase())) return;
+    const t = $(el).text().trim();
+    if (t && t.length < 30) grade = t;
+  });
+
+  // Campus / building
+  $('[id]').each((_, el) => {
+    if (campus) return;
+    if (!/campus|building|school/.test(($(el).attr('id') || '').toLowerCase())) return;
+    const t = $(el).text().trim();
+    if (t && t.length > 2 && t.length < 50) campus = t;
+  });
 
   return { name, grade, campus };
 }
@@ -418,6 +461,17 @@ async function getGradesData(client) {
     } catch (err) {
       console.error('[student info]', err.message);
     }
+    // Fallback: the report card page (already loaded) carries the student name in
+    // its header banner — use it if the Registration page didn't yield one.
+    if (!student.name || !student.grade) {
+      try {
+        const s2 = parseStudentInfo(rcRes.data);
+        if (!student.name)   student.name   = s2.name;
+        if (!student.grade)  student.grade  = s2.grade;
+        if (!student.campus) student.campus = s2.campus;
+      } catch (_) { /* ignore */ }
+    }
+    console.log('[student]', JSON.stringify(student));
 
     // ── 4. Merge A/B course pairs into unified rows ───────────────────────
     //
@@ -573,6 +627,46 @@ app.post('/api/bootstrap', async (req, res) => {
   }
 
   res.json(out);
+});
+
+// ── DEBUG (temporary): find where HAC exposes the student name ────────────────
+function nameCandidates(html) {
+  const $ = cheerio.load(html);
+  const out = [];
+  const push = (src, t) => { t = (t || '').trim().replace(/\s+/g, ' '); if (t && t.length <= 70) out.push({ src, text: t }); };
+  push('title', $('title').text());
+  $('[id]').each((_, el) => {
+    const id = $(el).attr('id') || '';
+    if (/name|student|chooser|banner|grade|campus/i.test(id)) push('id:' + id, $(el).text());
+  });
+  $('[class]').each((_, el) => {
+    const c = $(el).attr('class') || '';
+    if (/chooser|banner|student|name/i.test(c)) push('class:' + c.split(/\s+/)[0], ownText($, el));
+  });
+  $('*').each((_, el) => {
+    if (out.length > 80) return;
+    const t = ownText($, el);
+    if (HAC_NAME_RE.test(t) && t.length <= 45) push('pattern', t);
+  });
+  const seen = new Set();
+  return out.filter(o => { const k = o.src + '|' + o.text; if (seen.has(k)) return false; seen.add(k); return true; }).slice(0, 40);
+}
+
+app.post('/api/debug-name', async (req, res) => {
+  const { username, password } = req.body || {};
+  if (!username || !password) return res.status(400).json({ error: 'creds required' });
+  const client = makeClient();
+  try {
+    await login(client, username, password);
+    const grab = async (url) => { try { const r = await client.get(url); return { parsed: parseStudentInfo(r.data), candidates: nameCandidates(r.data) }; } catch (e) { return { error: e.message }; } };
+    res.json({
+      registration: await grab(INFO_URL),
+      reportCard:   await grab(RC_URL),
+      assignments:  await grab(CW_URL),
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
