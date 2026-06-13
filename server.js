@@ -853,43 +853,76 @@ function findRunSelect($page) {
 // run dropdown overridden to the target period and __EVENTTARGET pointed at it.
 // Pass `ajax = { scriptManager, updatePanel }` to additionally form a native
 // ASP.NET AJAX async (delta) postback.
-function buildSwitchBody($page, runName, periodValue, ajax) {
-  const formData = {};
+// Build an ASP.NET postback body from a page's current state, with overrides.
+//   opts.eventTarget / eventArg → __EVENTTARGET / __EVENTARGUMENT
+//   opts.set         → { fieldName: value, … } extra/overridden fields
+//   opts.submitName  → name of a submit/image button to "click" (its value posted)
+function buildPostBody($page, opts = {}) {
+  const fd = {};
 
-  // 1. All hidden inputs (__VIEWSTATE, __VIEWSTATEGENERATOR, __EVENTVALIDATION, …)
+  // All hidden inputs (__VIEWSTATE, __VIEWSTATEGENERATOR, __EVENTVALIDATION, hdn*…)
   $page('input[type="hidden"]').each((_, el) => {
     const name = $page(el).attr('name');
-    if (name) formData[name] = $page(el).val() || '';
+    if (name) fd[name] = $page(el).val() || '';
   });
 
-  // 2. Every <select>'s current value (ddlClasses, ddlCompetencies, ddlOrderBy, …)
+  // Every <select>'s current value (run dropdown, ddlClasses, ddlOrderBy, …)
   $page('select').each((_, el) => {
     const name = $page(el).attr('name');
     if (!name) return;
     const sel = $page(el).find('option[selected]').attr('value');
-    formData[name] = sel !== undefined ? sel : ($page(el).val() || '');
+    fd[name] = sel !== undefined ? sel : ($page(el).val() || '');
   });
 
-  // 2b. Keep the filter dropdowns unrestricted so every class comes back. If a
-  //     fresh page renders these with no explicit selection, default them to the
-  //     "show everything" values the browser would post.
-  for (const k of Object.keys(formData)) {
-    if (/ddlClasses$|ddlCompetencies$/i.test(k) && !formData[k]) formData[k] = 'ALL';
-    if (/ddlOrderBy$/i.test(k) && !formData[k])                  formData[k] = 'Class';
+  // Keep the filter dropdowns unrestricted so every class comes back.
+  for (const k of Object.keys(fd)) {
+    if (/ddlClasses$|ddlCompetencies$/i.test(k) && !fd[k]) fd[k] = 'ALL';
+    if (/ddlOrderBy$/i.test(k) && !fd[k])                  fd[k] = 'Class';
   }
 
-  // 3. Trigger the postback on the run dropdown, switching to the target period
-  formData['__EVENTTARGET']   = runName;
-  formData['__EVENTARGUMENT'] = '';
-  formData[runName]           = periodValue;
-
-  // 4. Native AJAX async-postback extras (only used by the delta fallback path).
-  if (ajax && ajax.scriptManager) {
-    formData[ajax.scriptManager] = (ajax.updatePanel || '') + '|' + runName;
-    formData['__ASYNCPOST']      = 'true';
+  fd['__EVENTTARGET']   = opts.eventTarget || '';
+  fd['__EVENTARGUMENT'] = opts.eventArg    || '';
+  if (opts.set) Object.assign(fd, opts.set);
+  if (opts.submitName) {
+    fd[opts.submitName] = opts.submitValue != null ? opts.submitValue : '';
+    if (opts.imageButton) { fd[opts.submitName + '.x'] = '1'; fd[opts.submitName + '.y'] = '1'; }
   }
 
-  return new URLSearchParams(formData).toString();
+  return new URLSearchParams(fd).toString();
+}
+
+// HAC mirrors the run dropdown's value into hidden fields (hdnddlReportCardRuns1/2)
+// via a JS onchange handler, and the server reads THOSE to pick the grading run.
+// Return their names so we can set them alongside the <select>.
+function runMirrorFields($page) {
+  const names = [];
+  $page('input[type="hidden"]').each((_, el) => {
+    const n = $page(el).attr('name') || '';
+    if (/hdn.*ReportCardRun/i.test(n)) names.push(n);
+  });
+  return names;
+}
+
+// Locate the "Refresh View" trigger (anchor __doPostBack target or submit button).
+function findRefreshControl($page) {
+  let found = null;
+  $page('a[href*="__doPostBack"], [onclick*="__doPostBack"]').each((_, el) => {
+    if (found) return;
+    const label = ($page(el).text() + ' ' + ($page(el).attr('id') || '') + ' ' + ($page(el).attr('title') || '')).toLowerCase();
+    if (!/refresh/.test(label)) return;
+    const attr = $page(el).attr('href') || $page(el).attr('onclick') || '';
+    const m = attr.match(/__doPostBack\('([^']*)'(?:,\s*'([^']*)')?\)/);
+    if (m) found = { eventTarget: m[1], eventArg: m[2] || '' };
+  });
+  if (!found) {
+    $page('input[type="submit"], input[type="button"], input[type="image"]').each((_, el) => {
+      if (found) return;
+      const label = (($page(el).attr('value') || '') + ' ' + ($page(el).attr('id') || '') + ' ' + ($page(el).attr('alt') || '')).toLowerCase();
+      if (!/refresh/.test(label)) return;
+      found = { submitName: $page(el).attr('name') || '', submitValue: $page(el).attr('value') || '', imageButton: ($page(el).attr('type') === 'image') };
+    });
+  }
+  return found;
 }
 
 function countAssignments(classes) {
@@ -931,12 +964,27 @@ function findScriptManager(html, $page, runName) {
   return { scriptManager: m[1], updatePanel };
 }
 
+// Build the ordered list of postback strategies for switching to `periodValue`.
+// HAC reads the run from hidden mirror fields, so setting those (not just the
+// <select>) is the key. We try the most-likely strategy first and stop as soon
+// as one returns assignment rows.
+function switchStrategies($fresh, runName, periodValue) {
+  const mirrors    = runMirrorFields($fresh);
+  const mirrorSet  = Object.fromEntries(mirrors.map(n => [n, periodValue]));
+  const withRun    = { [runName]: periodValue, ...mirrorSet };
+  const list = [
+    { name: 'dropdown+mirrors', opts: { eventTarget: runName, set: withRun } },
+    { name: 'dropdown',         opts: { eventTarget: runName, set: { [runName]: periodValue } } },
+  ];
+  const refresh = findRefreshControl($fresh);
+  if (refresh) list.push({ name: 'refresh+mirrors', opts: { ...refresh, set: withRun } });
+  return list;
+}
+
 // Fetch one grading period's assignments by switching the Report Card Run.
-// Strategy: a clean full-page postback first; if it yields no assignment rows,
-// fall back to a native AJAX async postback (some HAC configs only render the
-// assignment detail on the delta response). Returns { classes, diag }.
+// Returns { classes, diag }. diag.attempts records every strategy tried.
 async function fetchPeriodData(client, runName, periodValue) {
-  const diag = { sync: null, ajax: null, used: 'none' };
+  const diag = { used: 'none', attempts: [] };
 
   // Fresh GET so __VIEWSTATE/__EVENTVALIDATION belong to the page we post from.
   const freshRes = await client.get(CW_URL, {
@@ -944,69 +992,35 @@ async function fetchPeriodData(client, runName, periodValue) {
   });
   const $fresh = cheerio.load(freshRes.data);
 
-  // ── Attempt 1: clean full-page postback (NO X-Requested-With / AJAX hints) ──
-  const syncRes = await client.post(CW_URL, buildSwitchBody($fresh, runName, periodValue, null), {
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
-      'Referer':      CW_URL,
-      'Accept':       'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-    },
-  });
-  const syncRaw  = String(syncRes.data);
-  let   html     = looksLikeDelta(syncRaw) ? extractHtmlFromDelta(syncRaw) : syncRaw;
-  let   classes  = parseAssignments(html);
-  const syncAfter = findRunSelect(cheerio.load(html));
-  diag.sync = {
-    selectedAfter: syncAfter ? syncAfter.selected : '?',
-    blocks: classes.length, assignments: countAssignments(classes),
-    isDelta: looksLikeDelta(syncRaw), respLen: syncRaw.length,
-  };
-  diag.used = 'sync';
-
-  // ── Attempt 2: native AJAX async postback (only if sync found no rows) ──────
-  if (countAssignments(classes) === 0) {
+  let classes = [];
+  for (const strat of switchStrategies($fresh, runName, periodValue)) {
+    let raw;
     try {
-      const sm = findScriptManager(freshRes.data, $fresh, runName);
-      if (sm) {
-        const ares = await client.post(CW_URL, buildSwitchBody($fresh, runName, periodValue, sm), {
-          headers: {
-            'Content-Type':     'application/x-www-form-urlencoded',
-            'Referer':          CW_URL,
-            'Accept':           '*/*',
-            'X-Requested-With': 'XMLHttpRequest',
-            'X-MicrosoftAjax':  'Delta=true',
-          },
-        });
-        const aRaw     = String(ares.data);
-        const aHtml    = looksLikeDelta(aRaw) ? extractHtmlFromDelta(aRaw) : aRaw;
-        const aClasses = parseAssignments(aHtml);
-        const aAfter   = findRunSelect(cheerio.load(aHtml));
-        diag.ajax = {
-          selectedAfter: aAfter ? aAfter.selected : '?',
-          blocks: aClasses.length, assignments: countAssignments(aClasses),
-          isDelta: looksLikeDelta(aRaw), respLen: aRaw.length,
-          scriptManager: sm.scriptManager, updatePanel: sm.updatePanel,
-        };
-        if (countAssignments(aClasses) > countAssignments(classes)) {
-          classes = aClasses; html = aHtml; diag.used = 'ajax';
-        }
-      } else {
-        diag.ajax = { skipped: 'no ScriptManager on page' };
-      }
+      const r = await client.post(CW_URL, buildPostBody($fresh, strat.opts), {
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Referer':      CW_URL,
+          'Accept':       'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        },
+      });
+      raw = String(r.data);
     } catch (e) {
-      diag.ajax = { error: e.message };
+      diag.attempts.push({ strategy: strat.name, error: e.message });
+      continue;
     }
+    const html  = looksLikeDelta(raw) ? extractHtmlFromDelta(raw) : raw;
+    const c     = parseAssignments(html);
+    const after = findRunSelect(cheerio.load(html));
+    diag.attempts.push({
+      strategy: strat.name,
+      selectedAfter: after ? after.selected : '?',
+      blocks: c.length, assignments: countAssignments(c), rawLen: raw.length,
+    });
+    if (countAssignments(c) > 0) { classes = c; diag.used = strat.name; break; }
+    if (c.length > classes.length) classes = c; // keep best-so-far if none have rows
   }
 
-  // If still empty, surface why (auth bounce? right page, no detail?).
-  if (countAssignments(classes) === 0) {
-    diag.flags = {
-      hasLoginForm:       /LogOnDetails\.UserName/i.test(html),
-      hasAssignmentClass: /AssignmentClass/i.test(html),
-      htmlLen:            html.length,
-    };
-  }
-
+  if (countAssignments(classes) === 0) diag.flags = { note: 'no assignments from any strategy' };
   return { classes, diag };
 }
 
@@ -1063,7 +1077,7 @@ app.post('/api/assignments', async (req, res) => {
         allData[p.value] = classes;
         debugPerPeriod.push({ value: p.value, label: p.label, ...diag, blocks: classes.length, assignments: countAssignments(classes) });
         console.log('[asgn] ' + p.label + '=' + p.value + ' used=' + diag.used
-          + ' sync=' + JSON.stringify(diag.sync) + (diag.ajax ? ' ajax=' + JSON.stringify(diag.ajax) : ''));
+          + ' attempts=' + JSON.stringify(diag.attempts));
       } catch (e) {
         console.error('[asgn] period ' + p.value + ' failed:', e.message);
         allData[p.value] = [];
@@ -1300,32 +1314,46 @@ app.post('/api/debug-switch', async (req, res) => {
     });
     const $fresh = cheerio.load(fresh.data);
 
-    // Attempt 1 — clean full-page postback.
-    const syncBody   = buildSwitchBody($fresh, runSel.name, target.value, null);
-    const sentFields = [...new URLSearchParams(syncBody).keys()];
-    const syncRes    = await client.post(CW_URL, syncBody, {
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'Referer': CW_URL,
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-      },
+    // Show how the run dropdown is wired (onchange) + the hidden mirror fields it
+    // copies into, plus every postback control on the page.
+    const $runEl = $fresh('select').filter((_, el) => $fresh(el).attr('name') === runSel.name).first();
+    const runDropdownHtml = ($fresh.html($runEl) || '').replace(/\s+/g, ' ').slice(0, 700);
+    const mirrorFields = runMirrorFields($fresh).map(n => ({ name: n, value: $fresh(`input[name="${n}"]`).val() || '' }));
+    const refreshControl = findRefreshControl($fresh);
+    const postbackControls = [];
+    $fresh('a[href*="__doPostBack"], [onclick*="__doPostBack"]').each((_, el) => {
+      if (postbackControls.length >= 12) return;
+      const attr = $fresh(el).attr('href') || $fresh(el).attr('onclick') || '';
+      const m = attr.match(/__doPostBack\('([^']*)'(?:,\s*'([^']*)')?\)/);
+      if (m) postbackControls.push({ target: m[1], arg: m[2] || '', text: $fresh(el).text().trim().slice(0, 30) });
     });
-    const sync = summarizeAssignPage(String(syncRes.data));
 
-    // Attempt 2 — native AJAX async postback.
-    let ajax;
-    const sm = findScriptManager(fresh.data, $fresh, runSel.name);
-    if (sm) {
-      const aRes = await client.post(CW_URL, buildSwitchBody($fresh, runSel.name, target.value, sm), {
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-          'Referer': CW_URL, 'Accept': '*/*',
-          'X-Requested-With': 'XMLHttpRequest', 'X-MicrosoftAjax': 'Delta=true',
-        },
-      });
-      ajax = { scriptManager: sm.scriptManager, updatePanel: sm.updatePanel, ...summarizeAssignPage(String(aRes.data)) };
-    } else {
-      ajax = { skipped: 'no ScriptManager found — page is not ASP.NET AJAX' };
+    // Run every switch strategy and report which one actually returns assignments.
+    const strategies = [];
+    for (const strat of switchStrategies($fresh, runSel.name, target.value)) {
+      const body = buildPostBody($fresh, strat.opts);
+      try {
+        const r = await client.post(CW_URL, body, {
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'Referer': CW_URL,
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          },
+        });
+        const s = summarizeAssignPage(String(r.data));
+        strategies.push({
+          strategy: strat.name,
+          runFieldsSent: [...new URLSearchParams(body).entries()]
+            .filter(([k]) => /ReportCardRun|EVENTTARGET/i.test(k)).map(([k, v]) => `${k}=${v}`),
+          rawLen: s.rawLen, selectedAfter: s.selectedAfter,
+          blockCount: s.blockCount, assignmentCount: s.assignmentCount,
+          headings: s.headings,
+          firstBlockHtml: s.blockCount > 0 ? s.firstBlockHtml.slice(0, 1200) : '',
+          bodyExcerpt: s.blockCount === 0 ? s.bodyExcerpt.slice(0, 300) : '',
+        });
+      } catch (e) {
+        strategies.push({ strategy: strat.name, error: e.message });
+      }
     }
 
     res.json({
@@ -1334,9 +1362,11 @@ app.post('/api/debug-switch', async (req, res) => {
       runSelect:     { name: runSel.name, options: runSel.options },
       selectsOnPage: listSelects($init),
       target,
-      sentFields,
-      sync,
-      ajax,
+      runDropdownHtml,
+      mirrorFields,
+      refreshControl,
+      postbackControls,
+      strategies,
     });
   } catch (e) {
     res.status(500).json({ error: e.message, stack: (e.stack || '').split('\n').slice(0, 4) });
