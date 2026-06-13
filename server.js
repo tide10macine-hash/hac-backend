@@ -342,16 +342,8 @@ function parseStudentInfo(html) {
 // ─────────────────────────────────────────────────────────────────────────────
 // MAIN API ROUTE
 // ─────────────────────────────────────────────────────────────────────────────
-app.post('/api/grades', async (req, res) => {
-  const { username, password } = req.body || {};
-  if (!username || !password)
-    return res.status(400).json({ error: 'Username and password required.' });
-
-  const client = makeClient();
-
-  try {
-    await login(client, username, password);
-
+// Fetch + merge all grade data for one logged-in session → { student, courses, _debug }.
+async function getGradesData(client) {
     // ── 1. Single report card page load — parse ALL quarters at once ──────
     const rcRes = await client.get(RC_URL, {
       headers: { Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8' },
@@ -491,25 +483,16 @@ app.post('/api/grades', async (req, res) => {
       });
     }
 
-    if (!courses.length)
-      return res.status(404).json({ error: 'No grade data found. Try again or check your login.' });
-
     courses.sort((a, b) => a.name.localeCompare(b.name));
+    console.log('[result]', courses.length, 'courses');
 
-    console.log('[result]', courses.length, 'courses:');
-    courses.forEach(c =>
-      console.log(`  ${c.name}: Q1=${c.q1avg ?? '—'} Q2=${c.q2avg ?? '—'} Q3=${c.q3avg ?? '—'} Q4=${c.q4avg ?? '—'}`)
-    );
-
-    res.json({
+    return {
       student,
       courses,
       _debug: {
         allPeriods,
-        // RC quarter → RC period value (e.g. q1 → "1")
         quarterMap: Object.fromEntries(Object.entries(quarterMap).map(([q,p]) => [q, p.value])),
         quarterLabels: Object.fromEntries(Object.entries(quarterMap).map(([q,p]) => [q, p.label])),
-        // RC quarter → Assignments page period value (e.g. q1 → "1-2026")
         assignQuarterMap: Object.fromEntries(
           Object.entries(quarterMap).map(([q,p]) => [q, assignPeriodMap[p.label] || p.value])
         ),
@@ -518,13 +501,78 @@ app.post('/api/grades', async (req, res) => {
         liveCount: liveGrades.size,
         sampleRows: [...rcRows.entries()].slice(0, 4).map(([k, v]) => ({ raw: k, ...v })),
       },
-    });
+    };
+}
 
+app.post('/api/grades', async (req, res) => {
+  const { username, password } = req.body || {};
+  if (!username || !password)
+    return res.status(400).json({ error: 'Username and password required.' });
+  const client = makeClient();
+  try {
+    await login(client, username, password);
+    const data = await getGradesData(client);
+    if (!data.courses.length)
+      return res.status(404).json({ error: 'No grade data found. Try again or check your login.' });
+    res.json(data);
   } catch (err) {
     console.error('[/api/grades]', err.message);
     const status = err.message?.includes('username or password') ? 401 : 500;
     res.status(status).json({ error: err.message || 'Unknown server error.' });
   }
+});
+
+// ── Bootstrap: ONE login, all three pages fetched concurrently ───────────────
+// The frontend calls this once at sign-in so grades, every quarter's assignments,
+// and the transcript are all ready up front — no extra logins, no lazy round-trips.
+app.post('/api/bootstrap', async (req, res) => {
+  const { username, password } = req.body || {};
+  if (!username || !password)
+    return res.status(400).json({ error: 'Username and password required.' });
+  const client = makeClient();
+  try {
+    await login(client, username, password);
+  } catch (err) {
+    const status = err.message?.includes('username or password') ? 401 : 500;
+    return res.status(status).json({ error: err.message || 'Login failed.' });
+  }
+
+  const [gradesR, assignR, transcriptR] = await Promise.allSettled([
+    getGradesData(client),
+    getAssignmentsData(client),
+    getTranscriptData(client),
+  ]);
+
+  const out = { errors: {} };
+
+  if (gradesR.status === 'fulfilled') {
+    out.student = gradesR.value.student;
+    out.courses = gradesR.value.courses;
+    out._debug  = gradesR.value._debug;
+  } else {
+    console.error('[bootstrap] grades:', gradesR.reason?.message);
+    out.courses = [];
+    out.errors.grades = gradesR.reason?.message || 'failed';
+  }
+
+  if (assignR.status === 'fulfilled') {
+    out.assignByClass = assignR.value.byClass;
+    out.periodOpts    = assignR.value.periodOpts;
+    out._assignDebug  = assignR.value._debug;
+  } else {
+    console.error('[bootstrap] assignments:', assignR.reason?.message);
+    out.assignByClass = {};
+    out.errors.assignments = assignR.reason?.message || 'failed';
+  }
+
+  if (transcriptR.status === 'fulfilled') {
+    out.transcript = transcriptR.value;
+  } else {
+    console.error('[bootstrap] transcript:', transcriptR.reason?.message);
+    out.errors.transcript = transcriptR.reason?.message || 'failed';
+  }
+
+  res.json(out);
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -692,6 +740,13 @@ function parseTranscript(html) {
 // ─────────────────────────────────────────────────────────────────────────────
 // /api/transcript
 // ─────────────────────────────────────────────────────────────────────────────
+async function getTranscriptData(client) {
+  const tRes = await client.get(TRANSCRIPT_URL, {
+    headers: { Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8' },
+  });
+  return parseTranscript(tRes.data);
+}
+
 app.post('/api/transcript', async (req, res) => {
   const { username, password } = req.body || {};
   if (!username || !password)
@@ -699,10 +754,7 @@ app.post('/api/transcript', async (req, res) => {
   const client = makeClient();
   try {
     await login(client, username, password);
-    const tRes = await client.get(TRANSCRIPT_URL, {
-      headers: { Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8' },
-    });
-    const transcript = parseTranscript(tRes.data);
+    const transcript = await getTranscriptData(client);
     if (!transcript.years.length)
       return res.status(404).json({ error: 'No transcript data found.' });
     console.log('[transcript] GPA:', transcript.gpa, '| years:', transcript.years.length);
@@ -1029,95 +1081,83 @@ async function fetchPeriodData(client, runName, periodValue) {
 // A fresh GET before every POST ensures a clean __VIEWSTATE so ASP.NET accepts
 // the period switch.  HAC periods are numeric (1=Q1, 2=Q2, 3=Q3, 4=Q4).
 // ─────────────────────────────────────────────────────────────────────────────
+// Fetch every grading period's assignments for one logged-in session.
+// Returns { periodOpts, byClass, _debug }. Non-current periods are switched in
+// PARALLEL for speed (each request is self-contained — it carries its own
+// viewstate + run-mirror fields — so concurrent switches don't interfere).
+async function getAssignmentsData(client) {
+  const initRes = await client.get(CW_URL, {
+    headers: { Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8', Referer: HAC_BASE },
+  });
+  const initHtml = initRes.data;
+  const $init = cheerio.load(initHtml);
+
+  const runSel = findRunSelect($init);
+  if (!runSel || !runSel.options.length) throw new Error('No grading periods found on assignments page.');
+
+  const runName         = runSel.name;       // e.g. ctl00$plnMain$ddlReportCardRuns
+  const periodOpts      = runSel.options;     // [{ value, label }]
+  const defaultSelected = runSel.selected;
+  console.log('[asgn] runName=' + runName + ' default=' + defaultSelected
+    + ' periods:', periodOpts.map(p => p.label + '=' + p.value).join(', '));
+
+  const allData = {};
+  const debugPerPeriod = [];
+
+  await Promise.all(periodOpts.map(async (p) => {
+    if (p.value === defaultSelected) {
+      // Current period is already rendered in the initial GET — no POST needed.
+      allData[p.value] = parseAssignments(initHtml);
+      debugPerPeriod.push({ value: p.value, label: p.label, used: 'default',
+        blocks: allData[p.value].length, assignments: countAssignments(allData[p.value]) });
+      return;
+    }
+    try {
+      const { classes, diag } = await fetchPeriodData(client, runName, p.value);
+      allData[p.value] = classes;
+      debugPerPeriod.push({ value: p.value, label: p.label, ...diag,
+        blocks: classes.length, assignments: countAssignments(classes) });
+    } catch (e) {
+      console.error('[asgn] period ' + p.value + ' failed:', e.message);
+      allData[p.value] = [];
+      debugPerPeriod.push({ value: p.value, label: p.label, used: 'error', error: e.message });
+    }
+  }));
+
+  // Map periods → q1/q2/q3/q4 by sorting on the leading integer of the period.
+  const sortedPeriods = [...periodOpts].sort((a, b) => {
+    const na = parseInt(a.value, 10) || parseInt(a.label, 10) || 0;
+    const nb = parseInt(b.value, 10) || parseInt(b.label, 10) || 0;
+    return na - nb;
+  });
+  const quarterMapping = {};
+  sortedPeriods.forEach((p, i) => { const q = ['q1', 'q2', 'q3', 'q4'][i]; if (q) quarterMapping[q] = p.value; });
+  console.log('[asgn] quarterMapping:', JSON.stringify(quarterMapping));
+
+  // Build byClass: { cleanName: { q1: [...], q2: [...], ... } }
+  const byClass = {};
+  for (const [q, periodVal] of Object.entries(quarterMapping)) {
+    (allData[periodVal] || []).forEach(cls => {
+      if (!byClass[cls.name]) byClass[cls.name] = {};
+      byClass[cls.name][q] = cls.assignments;
+    });
+  }
+
+  return { periodOpts, byClass, _debug: { runName, defaultSelected, quarterMapping, perPeriod: debugPerPeriod } };
+}
+
 app.post('/api/assignments', async (req, res) => {
   const { username, password } = req.body || {};
   if (!username || !password)
     return res.status(400).json({ error: 'Username and password required.' });
-
   try {
     const client = makeClient();
     await login(client, username, password);
-
-    // Initial GET — discover the run dropdown + available periods
-    const initRes = await client.get(CW_URL, {
-      headers: { Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8', Referer: HAC_BASE },
-    });
-    const initHtml = initRes.data;
-    const $init = cheerio.load(initHtml);
-
-    const runSel = findRunSelect($init);
-    if (!runSel || !runSel.options.length)
-      return res.status(500).json({ error: 'No grading periods found on assignments page.' });
-
-    const runName    = runSel.name;                 // e.g. ctl00$plnMain$ddlReportCardRuns
-    const periodOpts = runSel.options;              // [{ value, label }]
-    const defaultSelected = runSel.selected;
-    console.log('[asgn] runName=' + runName + ' default=' + defaultSelected
-      + ' periods:', periodOpts.map(p => p.label + '=' + p.value).join(', '));
-
-    // allData: { periodValue → [ { name, rawName, assignments } ] }
-    const allData = {};
-    const debugPerPeriod = [];
-
-    for (const p of periodOpts) {
-      if (p.value === defaultSelected) {
-        // Default period is already rendered — no POST needed
-        allData[p.value] = parseAssignments(initHtml);
-        const acount = countAssignments(allData[p.value]);
-        debugPerPeriod.push({ value: p.value, label: p.label, used: 'default', blocks: allData[p.value].length, assignments: acount });
-        console.log('[asgn] ' + p.label + '=' + p.value + ' (default): ' + allData[p.value].length + ' classes, ' + acount + ' assignments');
-        continue;
-      }
-
-      // Non-default period: fresh GET (clean __VIEWSTATE) → full-page postback,
-      // with a native AJAX delta postback as a guarded fallback. See fetchPeriodData.
-      await new Promise(r => setTimeout(r, 400));
-      try {
-        const { classes, diag } = await fetchPeriodData(client, runName, p.value);
-        allData[p.value] = classes;
-        debugPerPeriod.push({ value: p.value, label: p.label, ...diag, blocks: classes.length, assignments: countAssignments(classes) });
-        console.log('[asgn] ' + p.label + '=' + p.value + ' used=' + diag.used
-          + ' attempts=' + JSON.stringify(diag.attempts));
-      } catch (e) {
-        console.error('[asgn] period ' + p.value + ' failed:', e.message);
-        allData[p.value] = [];
-        debugPerPeriod.push({ value: p.value, label: p.label, used: 'error', error: e.message });
-      }
-    }
-
-    // Map periods → q1/q2/q3/q4 by sorting on the leading integer of the period.
-    // HAC Report Card Run values are "1".."4" or "1-2026".."4-2026" (1=Q1 … 4=Q4).
-    const sortedPeriods = [...periodOpts].sort((a, b) => {
-      const na = parseInt(a.value, 10) || parseInt(a.label, 10) || 0;
-      const nb = parseInt(b.value, 10) || parseInt(b.label, 10) || 0;
-      return na - nb;
-    });
-    const quarterMapping = {};
-    sortedPeriods.forEach((p, i) => {
-      const q = ['q1', 'q2', 'q3', 'q4'][i];
-      if (q) quarterMapping[q] = p.value;
-    });
-    console.log('[asgn] quarterMapping:', JSON.stringify(quarterMapping));
-
-    // Build byClass: { cleanName: { q1: [...], q2: [...], ... } }
-    const byClass = {};
-    for (const [q, periodVal] of Object.entries(quarterMapping)) {
-      const classes = allData[periodVal] || [];
-      classes.forEach(cls => {
-        if (!byClass[cls.name]) byClass[cls.name] = {};
-        byClass[cls.name][q] = cls.assignments;
-      });
-    }
-
-    res.json({
-      periodOpts,
-      byClass,
-      _debug: { runName, defaultSelected, quarterMapping, perPeriod: debugPerPeriod },
-    });
-
+    res.json(await getAssignmentsData(client));
   } catch (err) {
     console.error('[/api/assignments]', err.message);
-    res.status(500).json({ error: err.message });
+    const status = err.message?.includes('username or password') ? 401 : 500;
+    res.status(status).json({ error: err.message });
   }
 });
 

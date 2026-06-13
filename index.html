@@ -455,6 +455,7 @@
   let courseData = [];
   let _hacUser = '', _hacPass = '';
   let _transcriptLoaded = false;
+  let _bootstrapTranscript = null; // transcript preloaded at login via /api/bootstrap
 
   /* ── GPA helpers ── */
   function courseLevel(name) {
@@ -640,6 +641,13 @@
       return;
     }
 
+    // Preloaded at login via /api/bootstrap — render instantly, no network call.
+    if (_bootstrapTranscript) {
+      renderTranscript(_bootstrapTranscript);
+      _transcriptLoaded = true;
+      return;
+    }
+
     try {
       const res = await fetch('/api/transcript', {
         method: 'POST',
@@ -807,7 +815,7 @@
   document.getElementById('btn-logout').addEventListener('click', () => {
     document.getElementById('hac-user').value = '';
     document.getElementById('hac-pass').value = '';
-    courseData = []; _transcriptLoaded = false; _hacUser = ''; _hacPass = ''; _assignByClass = null; _assignPromise = null; _assignCache = {}; _assignFetched = false; _assignFetching = null; _quarterPeriods = {}; _quarterLabels = {}; _assignQuarterMap = {};
+    courseData = []; _transcriptLoaded = false; _bootstrapTranscript = null; _hacUser = ''; _hacPass = ''; _assignByClass = null; _assignPromise = null; _assignCache = {}; _assignFetched = false; _assignFetching = null; _quarterPeriods = {}; _quarterLabels = {}; _assignQuarterMap = {};
     sessionStorage.removeItem('gf_user'); sessionStorage.removeItem('gf_pass');
     sessionStorage.removeItem('gf_section'); sessionStorage.removeItem('gf_tab');
     _stopInactivityWatch();
@@ -828,9 +836,11 @@
     errEl.classList.remove('show');
     if (!user || !pass) { document.getElementById('err-text').textContent = 'Please enter your student ID and password.'; errEl.classList.add('show'); return; }
     btn.disabled = true;
-    btn.innerHTML = '<span class="spin"></span>Loading grades…';
+    btn.innerHTML = '<span class="spin"></span>Loading…';
     try {
-      const res = await fetch('/api/grades', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ username: user, password: pass }) });
+      // One call logs in once and returns grades, every quarter's assignments,
+      // and the transcript together — so everything is ready up front.
+      const res = await fetch('/api/bootstrap', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ username: user, password: pass }) });
       if (res.status === 401) throw new Error('Incorrect username or password.');
       if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error || 'Server error — try again.'); }
       const data = await res.json();
@@ -845,11 +855,13 @@
         _quarterLabels     = data._debug.quarterLabels || {};
         _assignQuarterMap  = data._debug.assignQuarterMap || {};
       }
-      // Store assignments data from grades response - fetched with same session
+      // Assignments + transcript come back in the same bootstrap response — cache
+      // them so opening a class drawer or the transcript tab is instant.
       if (data.assignByClass) {
         _assignByClass = data.assignByClass;
-        console.log('[asgn] pre-loaded from grades:', Object.keys(_assignByClass).length, 'courses');
+        console.log('[asgn] pre-loaded at login:', Object.keys(_assignByClass).length, 'courses');
       }
+      if (data.transcript) _bootstrapTranscript = data.transcript;
       let studentName = '';
       const s = data.student || {};
       if (s.name && s.name.trim()) {
@@ -1288,7 +1300,7 @@
     // Clear session
     sessionStorage.removeItem('gf_user');
     sessionStorage.removeItem('gf_pass');
-    courseData = []; _transcriptLoaded = false; _hacUser = ''; _hacPass = ''; _assignByClass = null; _assignPromise = null; _assignCache = {}; _assignFetched = false; _assignFetching = null; _quarterPeriods = {}; _quarterLabels = {}; _assignQuarterMap = {};
+    courseData = []; _transcriptLoaded = false; _bootstrapTranscript = null; _hacUser = ''; _hacPass = ''; _assignByClass = null; _assignPromise = null; _assignCache = {}; _assignFetched = false; _assignFetching = null; _quarterPeriods = {}; _quarterLabels = {}; _assignQuarterMap = {};
     const btn = document.getElementById('btn-login');
     btn.disabled = false; btn.textContent = 'Load my grades';
     document.getElementById('hac-user').value = '';
@@ -1335,7 +1347,7 @@
     btn.innerHTML = '<span class="spin"></span>Restoring session…';
 
     try {
-      const res = await fetch('/api/grades', {
+      const res = await fetch('/api/bootstrap', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username: user, password: pass }),
@@ -1349,6 +1361,15 @@
       if (!courses.length) { btn.disabled = false; btn.textContent = 'Load my grades'; return; }
 
       _hacUser = user; _hacPass = pass;
+
+      // Cache the rest of the bootstrap payload so assignments + transcript are ready.
+      if (data._debug && data._debug.quarterMap) {
+        _quarterPeriods   = data._debug.quarterMap;
+        _quarterLabels    = data._debug.quarterLabels || {};
+        _assignQuarterMap = data._debug.assignQuarterMap || {};
+      }
+      if (data.assignByClass) _assignByClass = data.assignByClass;
+      if (data.transcript)    _bootstrapTranscript = data.transcript;
 
       let studentName = '';
       const s = data.student || {};
