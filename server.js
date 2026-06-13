@@ -669,14 +669,40 @@ app.post('/api/debug-staff', async (req, res) => {
         .filter(u => /staff|directory|constituent|api|\.json|search/i.test(u)))].slice(0, 25);
     }
 
-    // 2) staff.js — the script that loads the photos; pull its request URLs.
+    // 2) staff.js — show how the campus/directory params are derived.
     const sj = await get('https://static.friscoisd.org/js/schools/global/staff.js');
     out.staffJs = { status: sj.status, len: (sj.body || '').length, error: sj.error };
     if (sj.body) {
-      out.staffJs.ajaxCalls = [...new Set((sj.body.match(/\$\.(?:get|post|ajax|getJSON)\s*\([^;]{0,160}/g) || []))].slice(0, 15);
-      out.staffJs.fetchCalls = [...new Set((sj.body.match(/fetch\s*\([^;]{0,160}/g) || []))].slice(0, 10);
-      out.staffJs.urlStrings = [...new Set((sj.body.match(/["'`][^"'`]*(?:staff|directory|constituent|api|\.json|search|photo|image)[^"'`]*["'`]/gi) || [])
-        .map(s => s.replace(/["'`]/g, '')))].slice(0, 30);
+      out.staffJs.head = sj.body.slice(0, 1400);
+      const gi = sj.body.indexOf('CampusStaffDirectory');
+      if (gi >= 0) out.staffJs.aroundGet = sj.body.slice(Math.max(0, gi - 900), gi + 300).replace(/\s+/g, ' ');
+      // any campus/directory variable hints
+      out.staffJs.campusHints = [...new Set((sj.body.match(/(?:campus|directory)\s*[=:][^;\n]{0,80}/gi) || []))].slice(0, 20);
+    }
+
+    // 3) Try the API directly with candidate Reedy params to find the working combo.
+    const combos = [
+      { campus: 'reedy-high-school', directory: 'staff' },
+      { campus: 'reedy', directory: 'staff' },
+      { campus: 'Reedy High School', directory: 'staff' },
+      { campus: 'reedy-high-school', directory: 'Staff' },
+      { campus: 'reedy-high-school', directory: 'all' },
+      { campus: 'reedyhighschool', directory: 'staff' },
+    ];
+    out.apiTries = [];
+    for (const c of combos) {
+      const url = `https://resources.friscoisd.org/api/CampusStaffDirectory/directory?campus=${encodeURIComponent(c.campus)}&directory=${encodeURIComponent(c.directory)}&pow=false`;
+      const r = await get(url);
+      let arr = null;
+      try { arr = JSON.parse(r.body); } catch (_) {}
+      out.apiTries.push({
+        campus: c.campus, directory: c.directory, status: r.status,
+        isArray: Array.isArray(arr), count: Array.isArray(arr) ? arr.length : 0,
+        firstKeys: Array.isArray(arr) && arr[0] ? Object.keys(arr[0]) : [],
+        sample: Array.isArray(arr) && arr[0]
+          ? { FirstName: arr[0].FirstName, LastName: arr[0].LastName, Email: arr[0].Email, Photo: arr[0].Photo, Dept: arr[0].Dept }
+          : (r.body || '').slice(0, 120),
+      });
     }
 
     res.json(out);
