@@ -635,34 +635,51 @@ app.post('/api/teachers', async (req, res) => {
   }
 });
 
-// ── DEBUG (temporary): inspect the Reedy staff directory for photos ───────────
+// ── DEBUG (temporary): find the staff directory's data feed (photos via JS) ───
 app.post('/api/debug-staff', async (req, res) => {
-  const { name } = req.body || {};
   const client = makeClient();
+  const get = async (url) => {
+    try {
+      const r = await client.get(url, { headers: { 'User-Agent': UA, Accept: '*/*' }, maxRedirects: 5, validateStatus: () => true });
+      return { status: r.status, finalUrl: r.request?.res?.responseUrl, body: String(r.data) };
+    } catch (e) { return { error: e.message }; }
+  };
   try {
-    const r = await client.get(STAFF_DIR, {
-      headers: { 'User-Agent': UA, Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8' },
-      maxRedirects: 5, validateStatus: () => true,
-    });
-    const html = String(r.data);
-    const $ = cheerio.load(html);
-    const imgs = [];
-    $('img').each((_, im) => {
-      if (imgs.length >= 30) return;
-      imgs.push({ src: $(im).attr('src') || $(im).attr('data-src') || '', alt: $(im).attr('alt') || '', cls: $(im).attr('class') || '' });
-    });
-    const scripts = [];
-    $('script[src]').each((_, s) => { if (scripts.length < 12) scripts.push($(s).attr('src')); });
-    const term = (name || 'Lin').toString();
-    let context = '';
-    const idx = html.toLowerCase().indexOf(term.toLowerCase());
-    if (idx >= 0) context = html.slice(Math.max(0, idx - 500), idx + 500).replace(/\s+/g, ' ');
-    res.json({
-      status: r.status, finalUrl: r.request?.res?.responseUrl, len: html.length, title: $('title').text().trim(),
-      imgCount: $('img').length, imgs, scripts,
-      looksLikeSPA: $('img').length < 5 && /react|vue|app\.js|finalsite|fsapi/i.test(html),
-      contextFor: term, context,
-    });
+    const out = {};
+
+    // 1) The staff page itself — inline config + data-* attributes + candidate URLs.
+    const page = await get(STAFF_DIR);
+    out.page = { status: page.status, len: (page.body || '').length, error: page.error };
+    if (page.body) {
+      const $ = cheerio.load(page.body);
+      const inline = [];
+      $('script:not([src])').each((_, s) => {
+        const t = ($(s).html() || '').trim();
+        if (t && /campus|staff|const|api|var |id/i.test(t)) inline.push(t.slice(0, 900));
+      });
+      const dataAttrs = [];
+      $('[id*="staff" i], [class*="staff" i], [data-campus], [data-endpoint], [data-url], [data-constituent]').each((_, el) => {
+        if (dataAttrs.length >= 12) return;
+        const a = el.attribs || {};
+        dataAttrs.push({ tag: el.tagName, id: a.id, cls: a.class, data: Object.fromEntries(Object.entries(a).filter(([k]) => k.startsWith('data-'))) });
+      });
+      out.page.inlineScripts = inline.slice(0, 6);
+      out.page.dataAttrs = dataAttrs;
+      out.page.candidateUrls = [...new Set((page.body.match(/https?:\/\/[^\s"'<>]+|\/[A-Za-z0-9_\-\/.?=&%]+/g) || [])
+        .filter(u => /staff|directory|constituent|api|\.json|search/i.test(u)))].slice(0, 25);
+    }
+
+    // 2) staff.js — the script that loads the photos; pull its request URLs.
+    const sj = await get('https://static.friscoisd.org/js/schools/global/staff.js');
+    out.staffJs = { status: sj.status, len: (sj.body || '').length, error: sj.error };
+    if (sj.body) {
+      out.staffJs.ajaxCalls = [...new Set((sj.body.match(/\$\.(?:get|post|ajax|getJSON)\s*\([^;]{0,160}/g) || []))].slice(0, 15);
+      out.staffJs.fetchCalls = [...new Set((sj.body.match(/fetch\s*\([^;]{0,160}/g) || []))].slice(0, 10);
+      out.staffJs.urlStrings = [...new Set((sj.body.match(/["'`][^"'`]*(?:staff|directory|constituent|api|\.json|search|photo|image)[^"'`]*["'`]/gi) || [])
+        .map(s => s.replace(/["'`]/g, '')))].slice(0, 30);
+    }
+
+    res.json(out);
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
