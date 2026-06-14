@@ -726,9 +726,23 @@
     const quarter = document.getElementById('aol-quarter').value;
     const courseSel = document.getElementById('aol-course');
     const courseName = courseSel.value;
-    if (!courseName || !_assignByClass || !_assignByClass[courseName]) { area.innerHTML = ''; return; }
+    if (!courseName) { area.innerHTML = ''; return; }
 
-    const allAssigns = (_assignByClass[courseName][quarter] || []);
+    const courseAssigns = _matchCourse(_assignByClass, courseName);
+
+    // Bootstrap ships only the current quarter; if the picked quarter hasn't
+    // loaded yet, show a brief spinner and re-render once the backfill lands.
+    if (!_assignFull && (!courseAssigns || courseAssigns[quarter] === undefined)) {
+      area.innerHTML = '<div style="padding:14px 0;font-size:13px;color:var(--ink-4)"><span class="sk-spin"></span> Loading assignments…</div>';
+      _ensureFullAssignments().then(() => {
+        if (document.getElementById('aol-course').value === courseName &&
+            document.getElementById('aol-quarter').value === quarter) renderAolTable();
+      });
+      return;
+    }
+    if (!courseAssigns) { area.innerHTML = '<div style="padding:14px 0;font-size:13px;color:var(--ink-4)">No assignment data for this course.</div>'; return; }
+
+    const allAssigns = (courseAssigns[quarter] || []);
     const aols = allAssigns.filter(a => a.category && a.category.toLowerCase().includes('assessment of learning'));
 
     if (!aols.length) {
@@ -1053,7 +1067,7 @@
   document.getElementById('btn-logout').addEventListener('click', () => {
     document.getElementById('hac-user').value = '';
     document.getElementById('hac-pass').value = '';
-    courseData = []; _teachers = null; _transcriptLoaded = false; _bootstrapTranscript = null; _hacUser = ''; _hacPass = ''; _assignByClass = null; _assignPromise = null; _assignCache = {}; _assignFetched = false; _assignFetching = null; _quarterPeriods = {}; _quarterLabels = {}; _assignQuarterMap = {};
+    courseData = []; _teachers = null; _transcriptLoaded = false; _bootstrapTranscript = null; _hacUser = ''; _hacPass = ''; _assignByClass = null; _assignPromise = null; _assignFull = false; _assignFullPromise = null; _assignCache = {}; _assignFetched = false; _assignFetching = null; _quarterPeriods = {}; _quarterLabels = {}; _assignQuarterMap = {};
     sessionStorage.removeItem('gf_user'); sessionStorage.removeItem('gf_pass');
     sessionStorage.removeItem('gf_section'); sessionStorage.removeItem('gf_tab');
     _stopInactivityWatch();
@@ -1097,7 +1111,8 @@
       // them so opening a class drawer or the transcript tab is instant.
       if (data.assignByClass) {
         _assignByClass = data.assignByClass;
-        console.log('[asgn] pre-loaded at login:', Object.keys(_assignByClass).length, 'courses');
+        _assignFull = !data.assignPartial;
+        console.log('[asgn] pre-loaded at login:', Object.keys(_assignByClass).length, 'courses', _assignFull ? '(all quarters)' : '(current quarter)');
       }
       if (data.transcript) _bootstrapTranscript = data.transcript;
       _teachers = data.teachers || [];
@@ -1120,6 +1135,8 @@
         tab: sessionStorage.getItem('gf_tab') || 'q1',
       });
       _startInactivityWatch();
+      // Dashboard is up — quietly fetch the remaining quarters' assignments.
+      if (data.assignPartial) _ensureFullAssignments();
     } catch (e) {
       document.getElementById('err-text').textContent = e.message || 'Something went wrong.';
       errEl.classList.add('show');
@@ -1361,6 +1378,36 @@
   let _assignQuarterMap = {};
   let _assignByClass    = null;
   let _assignPromise    = null;
+  let _assignFull       = false;   // true once every quarter's assignments are loaded
+  let _assignFullPromise = null;   // in-flight background backfill of the other quarters
+
+  // Bootstrap returns only the CURRENT quarter's assignments (for a fast login).
+  // This pulls the remaining quarters in the background and merges them in, then
+  // refreshes any open assignment view. Safe to call repeatedly.
+  function _ensureFullAssignments() {
+    if (_assignFull) return Promise.resolve(_assignByClass);
+    if (_assignFullPromise) return _assignFullPromise;
+    if (_hacUser === '__demo__') { _assignFull = true; return Promise.resolve(_assignByClass); }
+    _assignFullPromise = fetch('/api/assignments', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: _hacUser, password: _hacPass }),
+    })
+    .then(r => r.ok ? r.json() : Promise.reject(new Error('backfill failed')))
+    .then(data => {
+      if (data && data.byClass) _assignByClass = data.byClass;
+      _assignFull = true;
+      _assignFullPromise = null;
+      console.log('[asgn] background backfill complete:', Object.keys(_assignByClass || {}).length, 'courses');
+      // If the AOL calculator is currently showing a course, re-render so the
+      // newly-arrived quarters become selectable/accurate.
+      const aolCourse = document.getElementById('aol-course');
+      if (aolCourse && aolCourse.value) renderAolTable();
+      return _assignByClass;
+    })
+    .catch(e => { _assignFullPromise = null; console.warn('[asgn] backfill error', e.message); return _assignByClass; });
+    return _assignFullPromise;
+  }
 
   function courseRow(c, i, quarter, extraCells) {
     const safeName = c.name.replace(/"/g, '&quot;');
@@ -1433,21 +1480,13 @@
     }
 
     // Find course — exact match first, then fuzzy
-    let courseData = byClass[courseName];
-    if (!courseData) {
-      const lc = courseName.toLowerCase();
-      const key = Object.keys(byClass).find(k => {
-        const kl = k.toLowerCase();
-        return kl === lc
-          || kl.replace(/\s+s[12]\s*$/i,'') === lc
-          || lc.replace(/\s+s[12]\s*$/i,'') === kl
-          || (lc.length > 8 && kl.startsWith(lc.substring(0, 10)))
-          || (kl.length > 8 && lc.startsWith(kl.substring(0, 10)));
-      });
-      if (key) {
-        courseData = byClass[key];
-        console.log('[asgn] fuzzy match:', courseName, '->', key);
-      }
+    let courseData = _matchCourse(byClass, courseName);
+
+    // Only the current quarter ships with bootstrap; if this quarter hasn't
+    // loaded yet, wait for the background backfill before deciding it's empty.
+    if (!_assignFull && (!courseData || courseData[quarter] === undefined)) {
+      byClass = await _ensureFullAssignments();
+      courseData = _matchCourse(byClass, courseName);
     }
 
     if (!courseData) {
@@ -1460,6 +1499,23 @@
     const assignments = courseData[quarter] || [];
     console.log('[asgn]', courseName, quarter, '->', assignments.length, 'assignments');
     renderAssignments(innerEl, assignments);
+  }
+
+  // Resolve a course key in the assignments map: exact match, then fuzzy.
+  function _matchCourse(byClass, courseName) {
+    if (!byClass) return null;
+    if (byClass[courseName]) return byClass[courseName];
+    const lc = courseName.toLowerCase();
+    const key = Object.keys(byClass).find(k => {
+      const kl = k.toLowerCase();
+      return kl === lc
+        || kl.replace(/\s+s[12]\s*$/i,'') === lc
+        || lc.replace(/\s+s[12]\s*$/i,'') === kl
+        || (lc.length > 8 && kl.startsWith(lc.substring(0, 10)))
+        || (kl.length > 8 && lc.startsWith(kl.substring(0, 10)));
+    });
+    if (key) { console.log('[asgn] fuzzy match:', courseName, '->', key); return byClass[key]; }
+    return null;
   }
 
   function renderAssignments(el, assignments) {
@@ -1546,7 +1602,7 @@
     // Clear session
     sessionStorage.removeItem('gf_user');
     sessionStorage.removeItem('gf_pass');
-    courseData = []; _teachers = null; _transcriptLoaded = false; _bootstrapTranscript = null; _hacUser = ''; _hacPass = ''; _assignByClass = null; _assignPromise = null; _assignCache = {}; _assignFetched = false; _assignFetching = null; _quarterPeriods = {}; _quarterLabels = {}; _assignQuarterMap = {};
+    courseData = []; _teachers = null; _transcriptLoaded = false; _bootstrapTranscript = null; _hacUser = ''; _hacPass = ''; _assignByClass = null; _assignPromise = null; _assignFull = false; _assignFullPromise = null; _assignCache = {}; _assignFetched = false; _assignFetching = null; _quarterPeriods = {}; _quarterLabels = {}; _assignQuarterMap = {};
     const btn = document.getElementById('btn-login');
     btn.disabled = false; btn.textContent = 'Load my grades';
     document.getElementById('hac-user').value = '';
@@ -1614,7 +1670,7 @@
         _quarterLabels    = data._debug.quarterLabels || {};
         _assignQuarterMap = data._debug.assignQuarterMap || {};
       }
-      if (data.assignByClass) _assignByClass = data.assignByClass;
+      if (data.assignByClass) { _assignByClass = data.assignByClass; _assignFull = !data.assignPartial; }
       if (data.transcript)    _bootstrapTranscript = data.transcript;
       _teachers = data.teachers || [];
 
@@ -1634,6 +1690,7 @@
         tab: sessionStorage.getItem('gf_tab') || 'q1',
       });
       _startInactivityWatch();
+      if (data.assignPartial) _ensureFullAssignments();
     } catch (e) {
       // Silently fail — just show login screen normally
       sessionStorage.removeItem('gf_user');

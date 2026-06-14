@@ -379,21 +379,25 @@ function parseStudentInfo(html) {
 // MAIN API ROUTE
 // ─────────────────────────────────────────────────────────────────────────────
 // Fetch + merge all grade data for one logged-in session → { student, courses, _debug }.
-async function getGradesData(client) {
-    // Fetch the three source pages in parallel. The Assignments page is used for
-    // BOTH the period-value map and live grades, so fetch it once and share it.
+async function getGradesData(client, pre = {}) {
+    // Fetch the source pages we weren't already handed. The bootstrap route shares
+    // the Assignments page (CW) and the others across grades + assignments so they
+    // load once, not twice. A field present in `pre` (even '') is reused as-is.
     const _h = { Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8' };
     const [rcR, cwR, infoR] = await Promise.allSettled([
-      client.get(RC_URL,   { headers: _h }),
-      client.get(CW_URL,   { headers: _h }),
-      client.get(INFO_URL, { headers: _h }),
+      pre.rcHtml   === undefined ? client.get(RC_URL,   { headers: _h }) : Promise.resolve(null),
+      pre.cwHtml   === undefined ? client.get(CW_URL,   { headers: _h }) : Promise.resolve(null),
+      pre.infoHtml === undefined ? client.get(INFO_URL, { headers: _h }) : Promise.resolve(null),
     ]);
-    const rcData   = rcR.status   === 'fulfilled' ? rcR.value.data   : '';
-    const cwData   = cwR.status   === 'fulfilled' ? cwR.value.data   : '';
-    const infoData = infoR.status === 'fulfilled' ? infoR.value.data : '';
-    if (rcR.status   !== 'fulfilled') console.error('[grades RC]',   rcR.reason?.message);
-    if (cwR.status   !== 'fulfilled') console.error('[grades CW]',   cwR.reason?.message);
-    if (infoR.status !== 'fulfilled') console.error('[grades INFO]', infoR.reason?.message);
+    const pick = (provided, settled, label) => {
+      if (provided !== undefined) return provided;
+      if (settled.status === 'fulfilled' && settled.value) return settled.value.data;
+      console.error(label, settled.reason?.message);
+      return '';
+    };
+    const rcData   = pick(pre.rcHtml,   rcR,   '[grades RC]');
+    const cwData   = pick(pre.cwHtml,   cwR,   '[grades CW]');
+    const infoData = pick(pre.infoHtml, infoR, '[grades INFO]');
 
     // ── 1. Report card page — parse ALL quarters at once ──────
     const rcRes = { data: rcData };
@@ -583,25 +587,42 @@ app.post('/api/bootstrap', async (req, res) => {
     return res.status(status).json({ error: err.message || 'Login failed.' });
   }
 
-  // Warm the staff-directory cache (external API) concurrently with the HAC
-  // fetches so teacher photos don't add a serial round-trip afterward.
-  const [gradesR, assignR, transcriptR, teachersR] = await Promise.allSettled([
-    getGradesData(client),
-    getAssignmentsData(client),
-    getTranscriptData(client),
-    getTeachersData(client),
-    fetchStaffDirectory('Reedy High School').catch(() => null),
+  const _h = { Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8' };
+
+  // Warm the staff-directory cache (external API) concurrently with HAC.
+  const staffPromise = fetchStaffDirectory('Reedy High School').catch(() => null);
+
+  // Fetch every HAC page we need ONCE, all in parallel — a single round-trip's
+  // worth of latency instead of several. The Assignments page (CW) feeds both
+  // the live grade averages AND the assignment drawers, so it is shared rather
+  // than fetched twice.
+  const [rcR, cwR, infoR, transcriptR, classesR] = await Promise.allSettled([
+    client.get(RC_URL,         { headers: _h }),
+    client.get(CW_URL,         { headers: _h }),
+    client.get(INFO_URL,       { headers: _h }),
+    client.get(TRANSCRIPT_URL, { headers: _h }),
+    client.get(SCHED_URL,      { headers: _h }),
   ]);
+  const htmlOf = (r, label) => {
+    if (r.status === 'fulfilled' && r.value) return r.value.data;
+    console.error('[bootstrap]', label, r.reason?.message);
+    return '';
+  };
+  const rcHtml         = htmlOf(rcR,         'RC');
+  const cwHtml         = htmlOf(cwR,         'CW');
+  const infoHtml       = htmlOf(infoR,       'INFO');
+  const transcriptHtml = htmlOf(transcriptR, 'TRANSCRIPT');
+  const classesHtml    = htmlOf(classesR,    'CLASSES');
 
   const out = { errors: {} };
 
-  if (teachersR.status === 'fulfilled') {
-    out.teachers = teachersR.value;
-  } else {
-    console.error('[bootstrap] teachers:', teachersR.reason?.message);
-    out.teachers = [];
-    out.errors.teachers = teachersR.reason?.message || 'failed';
-  }
+  // Grades + the CURRENT quarter's assignments are derived entirely from the
+  // pages we already fetched — no extra HAC round-trips. The other quarters'
+  // assignments load lazily in the background (frontend) so they don't gate login.
+  const [gradesR, assignR] = await Promise.allSettled([
+    getGradesData(client, { rcHtml, cwHtml, infoHtml }),
+    getAssignmentsData(client, { initHtml: cwHtml, currentOnly: true }),
+  ]);
 
   if (gradesR.status === 'fulfilled') {
     out.student = gradesR.value.student;
@@ -617,22 +638,32 @@ app.post('/api/bootstrap', async (req, res) => {
     out.assignByClass = assignR.value.byClass;
     out.periodOpts    = assignR.value.periodOpts;
     out._assignDebug  = assignR.value._debug;
+    out.assignPartial = true; // only the current quarter — frontend backfills the rest
   } else {
     console.error('[bootstrap] assignments:', assignR.reason?.message);
     out.assignByClass = {};
     out.errors.assignments = assignR.reason?.message || 'failed';
   }
 
-  if (transcriptR.status === 'fulfilled') {
-    out.transcript = transcriptR.value;
-  } else {
-    console.error('[bootstrap] transcript:', transcriptR.reason?.message);
-    out.errors.transcript = transcriptR.reason?.message || 'failed';
+  // Transcript + teachers parse straight from their already-fetched HTML.
+  try {
+    out.transcript = transcriptHtml ? parseTranscript(transcriptHtml) : { gpa: {}, years: [] };
+  } catch (e) {
+    console.error('[bootstrap] transcript:', e.message);
+    out.errors.transcript = e.message;
+  }
+  try {
+    out.teachers = classesHtml ? parseTeachers(classesHtml) : [];
+  } catch (e) {
+    console.error('[bootstrap] teachers:', e.message);
+    out.teachers = [];
+    out.errors.teachers = e.message;
   }
 
   // Match teachers to their staff-directory photos (by email). Best-effort.
+  await staffPromise;
   if (out.teachers && out.teachers.length) {
-    const campus = (gradesR.status === 'fulfilled' && gradesR.value.student && gradesR.value.student.campus) || '';
+    const campus = (out.student && out.student.campus) || '';
     try { await attachTeacherPhotos(out.teachers, campus); } catch (_) { /* photos optional */ }
   }
 
@@ -1324,11 +1355,16 @@ async function fetchPeriodData(client, runName, periodValue, $pre) {
 // Returns { periodOpts, byClass, _debug }. Non-current periods are switched in
 // PARALLEL for speed (each request is self-contained — it carries its own
 // viewstate + run-mirror fields — so concurrent switches don't interfere).
-async function getAssignmentsData(client) {
-  const initRes = await client.get(CW_URL, {
-    headers: { Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8', Referer: HAC_BASE },
-  });
-  const initHtml = initRes.data;
+async function getAssignmentsData(client, opts = {}) {
+  // Reuse the Assignments page if the caller already fetched it (bootstrap shares
+  // it with grades). Only GET it ourselves when we weren't handed one.
+  let initHtml = opts.initHtml;
+  if (!initHtml) {
+    const initRes = await client.get(CW_URL, {
+      headers: { Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8', Referer: HAC_BASE },
+    });
+    initHtml = initRes.data;
+  }
   const $init = cheerio.load(initHtml);
 
   const runSel = findRunSelect($init);
@@ -1349,6 +1385,13 @@ async function getAssignmentsData(client) {
       allData[p.value] = parseAssignments(initHtml);
       debugPerPeriod.push({ value: p.value, label: p.label, used: 'default',
         blocks: allData[p.value].length, assignments: countAssignments(allData[p.value]) });
+      return;
+    }
+    if (opts.currentOnly) {
+      // Login fast-path: skip the per-quarter postbacks (each is a slow HAC
+      // round-trip). The frontend backfills these quarters in the background.
+      allData[p.value] = [];
+      debugPerPeriod.push({ value: p.value, label: p.label, used: 'skipped(currentOnly)', blocks: 0, assignments: 0 });
       return;
     }
     try {
