@@ -1105,9 +1105,16 @@ function parseAssignments(html) {
       const scoreRaw   = (cells[4] || '').trim();
       const totalRaw   = (cells[5] || '').trim();
       if (!assignName || assignName === 'Assignment' || assignName === 'Date Due') return;
-      // skip category-weight summary rows (e.g. "Assessment of Learning", "Course overall average is:")
-      if (/overall average/i.test(assignName) || /^\d+(\.\d+)?$/.test(cells[1] || '') && /%/.test(scoreRaw)) return;
-      if (scoreRaw.includes('%') && !scoreRaw.includes('/')) return;
+      // Skip category-weight summary and footer rows.
+      // These have the assignment name set to the category name or a header phrase,
+      // and their score/total columns contain percentages or totals, not raw scores.
+      if (/overall average/i.test(assignName)) return;
+      // "Category / MaximumPoints = Percent * CategoryWeight" header row
+      if (/MaximumPoints|CategoryWeight/i.test(assignName)) return;
+      // Any row whose score column contains a % is a category aggregate, not a real score
+      if (scoreRaw.includes('%')) return;
+      // Category aggregate rows also appear when the "date assigned" cell is a large decimal (max points)
+      if (/^\d{3,}(\.\d+)?$/.test(cells[1] || '')) return;
       const score = parseFloat(scoreRaw);
       const total = parseFloat(totalRaw);
       assignments.push({
