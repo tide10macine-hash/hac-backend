@@ -655,9 +655,6 @@ app.post('/api/debug-staff', async (req, res) => {
     let campus = '';
     try { campus = (parseStudentInfo((await client.get(INFO_URL)).data).campus) || ''; } catch (_) {}
 
-    const combos = [];
-    for (const c of campusCandidates(campus)) for (const d of ['staff', 'Staff']) combos.push({ campus: c, directory: d });
-
     // (A) Read how staff.js builds the campus/directory params.
     const staffJs = {};
     try {
