@@ -227,11 +227,17 @@
     .cum-course-name { font-weight:500; }
     .cum-pts { font-family:'DM Mono',monospace; font-size:13px; font-weight:600; color:var(--ink-2); }
     .cum-excluded { color:var(--ink-4); font-size:11.5px; font-style:italic; }
-    .cum-running-row { display:flex; align-items:center; gap:10px; font-size:12.5px; }
-    .cum-running-label { color:var(--ink-3); width:180px; flex-shrink:0; font-size:12px; }
-    .cum-running-bar-wrap { flex:1; background:var(--bg); border-radius:4px; height:7px; overflow:hidden; }
-    .cum-running-bar { height:100%; border-radius:4px; background:var(--accent); transition:width .4s; }
-    .cum-running-val { font-family:'DM Mono',monospace; font-size:12px; font-weight:600; color:var(--ink-2); width:40px; text-align:right; flex-shrink:0; }
+    /* ── Weighted GPA-by-MP bar chart ── */
+    .mp-chart { display:flex; align-items:stretch; gap:12px; padding:16px 14px 0; background:var(--surface); border:1px solid var(--border); border-radius:var(--r-lg); }
+    .mp-axis { display:flex; flex-direction:column; justify-content:space-between; font-family:'DM Mono',monospace; font-size:12px; font-weight:600; color:var(--ink-4); text-align:right; padding-bottom:30px; flex-shrink:0; }
+    .mp-plot { flex:1; height:280px; display:flex; align-items:flex-end; gap:16px; position:relative; padding-bottom:30px; }
+    .mp-gridlines { position:absolute; left:0; right:0; top:0; bottom:30px; display:flex; flex-direction:column; justify-content:space-between; pointer-events:none; }
+    .mp-gridlines > div { border-top:1px solid var(--border); }
+    .mp-col { flex:1; height:100%; position:relative; min-width:0; }
+    .mp-bar { position:absolute; left:0; right:0; bottom:0; margin:0 auto; max-width:84px; background:var(--green); border-radius:8px 8px 0 0; transition:height .5s cubic-bezier(.2,.8,.2,1); }
+    .mp-bar.empty { background:var(--border-2); }
+    .mp-bar-val { position:absolute; left:0; right:0; text-align:center; font-family:'DM Mono',monospace; font-size:18px; font-weight:700; color:var(--green); transition:bottom .5s cubic-bezier(.2,.8,.2,1); }
+    .mp-bar-label { position:absolute; left:0; right:0; bottom:-30px; text-align:center; font-size:15px; font-weight:700; color:var(--ink-3); }
 
     /* ── Assignment drawer ── */
     .course-table tbody tr.c-row { cursor:pointer; }
@@ -482,10 +488,10 @@
         <div class="tr-loading"><span class="sk-spin"></span>Load your transcript first to see cumulative GPA.</div>
       </div>
 
-      <!-- Running total bar -->
-      <div id="cum-running-wrap" style="display:none">
-        <div style="margin-bottom:0.6rem;font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3)">GPA progression — semester by semester</div>
-        <div id="cum-running-list" style="display:flex;flex-direction:column;gap:6px;"></div>
+      <!-- Weighted GPA per marking period (quarter) bar chart -->
+      <div id="cum-mp-wrap" style="display:none">
+        <div style="margin-bottom:0.9rem;font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3)">Weighted GPA by MP</div>
+        <div id="cum-mp-chart" class="mp-chart"></div>
       </div>
 
       <p class="footer-note" style="margin-top:1.75rem">
@@ -551,6 +557,13 @@
     const s1 = semGPA(courses, 1), s2 = semGPA(courses, 2);
     if (s1 !== null && s2 !== null) return (s1 + s2) / 2;
     return s1 ?? s2;
+  }
+  // Weighted GPA for a single marking period (quarter): average of each course's
+  // GPA points for that quarter. qField is 'q1avg' | 'q2avg' | 'q3avg' | 'q4avg'.
+  function quarterGPA(courses, qField) {
+    const pts = courses.map(c => toPoints(c[qField], c.name)).filter(p => p !== null);
+    if (!pts.length) return null;
+    return pts.reduce((s, p) => s + p, 0) / pts.length;
   }
   function num(v) {
     if (v === null || v === undefined) return null;
@@ -1290,17 +1303,55 @@
     return { cumGPA, totalPts, semCount: allEntries.length, entries: allEntries };
   }
 
+  function renderMpChart() {
+    const wrap = document.getElementById('cum-mp-wrap');
+    const chart = document.getElementById('cum-mp-chart');
+    if (!wrap || !chart) return;
+    if (!courseData || !courseData.length) { wrap.style.display = 'none'; return; }
+
+    const MIN = 3.0, MAX = 6.0;
+    const mps = [
+      { label: 'MP1', gpa: quarterGPA(courseData, 'q1avg') },
+      { label: 'MP2', gpa: quarterGPA(courseData, 'q2avg') },
+      { label: 'MP3', gpa: quarterGPA(courseData, 'q3avg') },
+      { label: 'MP4', gpa: quarterGPA(courseData, 'q4avg') },
+    ];
+    if (mps.every(m => m.gpa === null)) { wrap.style.display = 'none'; return; }
+    wrap.style.display = 'block';
+
+    const axis = [6.0, 5.5, 5.0, 4.5, 4.0, 3.5, 3.0]
+      .map(v => '<span>' + v.toFixed(1) + '</span>').join('');
+    const grid = [0,1,2,3,4,5].map(() => '<div></div>').join('');
+
+    const cols = mps.map(m => {
+      if (m.gpa === null) {
+        return '<div class="mp-col">'
+          + '<div class="mp-bar-val" style="color:var(--ink-4);bottom:0;margin-bottom:2px">—</div>'
+          + '<div class="mp-bar empty" style="height:3px"></div>'
+          + '<div class="mp-bar-label">' + m.label + '</div></div>';
+      }
+      const h = Math.max(2, Math.min(100, ((m.gpa - MIN) / (MAX - MIN)) * 100));
+      return '<div class="mp-col">'
+        + '<div class="mp-bar-val" style="bottom:' + h + '%;margin-bottom:6px">' + m.gpa.toFixed(2) + '</div>'
+        + '<div class="mp-bar" style="height:' + h + '%"></div>'
+        + '<div class="mp-bar-label">' + m.label + '</div></div>';
+    }).join('');
+
+    chart.innerHTML =
+      '<div class="mp-axis">' + axis + '</div>'
+      + '<div class="mp-plot"><div class="mp-gridlines">' + grid + '</div>' + cols + '</div>';
+  }
+
   function renderCumGPA() {
+    renderMpChart();
     const result = calcCumulativeGPA();
     const wrapEl = document.getElementById('cum-years-wrap');
-    const runWrap = document.getElementById('cum-running-wrap');
 
     if (!result) {
       wrapEl.innerHTML = '<div class="tr-loading">Load your grades and transcript first.</div>';
       document.getElementById('cum-gpa-val').textContent  = '—';
       document.getElementById('cum-sem-count').textContent = '—';
       document.getElementById('cum-total-pts').textContent = '—';
-      runWrap.style.display = 'none';
       return;
     }
 
@@ -1361,24 +1412,6 @@
           + '<tbody>' + rows + '</tbody>'
         + '</table>';
       wrapEl.appendChild(block);
-    });
-
-    // ── Running GPA bar chart ───────────────────────────────────────────
-    runWrap.style.display = 'block';
-    const listEl = document.getElementById('cum-running-list');
-    listEl.innerHTML = '';
-    let running = 0;
-    entries.forEach((e, i) => {
-      running = (running * i + e.pts) / (i + 1);
-      const shortName = e.courseName.length > 22 ? e.courseName.slice(0,20)+'…' : e.courseName;
-      const pct = Math.min(100, (running / 6.0) * 100).toFixed(1);
-      const row = document.createElement('div');
-      row.className = 'cum-running-row';
-      row.innerHTML =
-        '<span class="cum-running-label">' + shortName + ' ' + e.sem + '</span>'
-        + '<div class="cum-running-bar-wrap"><div class="cum-running-bar" style="width:' + pct + '%"></div></div>'
-        + '<span class="cum-running-val">' + running.toFixed(3) + '</span>';
-      listEl.appendChild(row);
     });
   }
 
