@@ -144,6 +144,14 @@
     .wi-result { margin-top:10px; font-size:13.5px; color:var(--ink-3); min-height:20px; }
     .wi-result .hi { font-weight:600; color:var(--green); font-family:'DM Mono',monospace; }
     .wi-result .diff { font-size:12px; color:var(--ink-4); margin-left:6px; }
+    .aol-result-grid { display:flex; flex-direction:column; gap:10px; margin-top:14px; }
+    .aol-result-row { display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; }
+    .aol-result-label { font-size:12px; color:var(--ink-3); font-weight:500; min-width:110px; }
+    .aol-result-val { font-family:'DM Mono',monospace; font-size:22px; font-weight:700; color:var(--ink); letter-spacing:-.02em; }
+    .aol-result-val.primary { font-size:28px; color:var(--ink); }
+    .aol-result-diff { font-size:12px; color:var(--ink-4); }
+    .aol-result-diff.up { color:var(--green); }
+    .aol-result-diff.dn { color:var(--red); }
 
     /* ── AOL What-if ── */
     .aol-table { width:100%; border-collapse:collapse; margin-top:12px; }
@@ -392,22 +400,6 @@
           <table class="course-table"><thead><tr><th>Course</th><th>Q1</th><th>Q2</th><th>Q3</th><th>Q4</th></tr></thead><tbody id="body-all"></tbody></table>
         </div>
 
-      </div>
-
-      <div class="whatif-card">
-        <h3>What-if calculator</h3>
-        <p class="whatif-desc">See how a hypothetical grade in any quarter would change your GPA</p>
-        <div class="wi-row">
-          <select id="wi-quarter">
-            <option value="q1">Quarter 1</option>
-            <option value="q2">Quarter 2</option>
-            <option value="q3">Quarter 3</option>
-            <option value="q4" selected>Quarter 4</option>
-          </select>
-          <select id="wi-course"></select>
-          <input type="number" id="wi-grade" placeholder="Hypothetical grade" min="0" max="100" step="1" />
-        </div>
-        <div class="wi-result" id="wi-result"></div>
       </div>
 
       <div class="whatif-card" id="aol-wi-card">
@@ -662,9 +654,6 @@
     document.getElementById('gpa-s1').textContent = s1 !== null ? s1.toFixed(2) : '—';
     document.getElementById('gpa-s2').textContent = s2 !== null ? s2.toFixed(2) : '—';
 
-    const sel = document.getElementById('wi-course');
-    sel.innerHTML = '';
-
     function fill(tbodyId, rowFn) {
       const tbody = document.getElementById(tbodyId);
       tbody.innerHTML = '';
@@ -680,31 +669,10 @@
     fill('body-s2', c => { const a = avg2(c.q3avg, c.q4avg); return '<tr><td><span class="c-name">' + c.name + badge(c.name) + '</span></td><td>' + chip(c.q3avg) + '</td><td>' + chip(c.q4avg) + '</td><td>' + chip(a) + '</td><td>' + ptsCell(toPoints(a, c.name), c.name) + '</td></tr>'; });
     fill('body-all', c => '<tr><td><span class="c-name">' + c.name + badge(c.name) + '</span></td><td>' + chip(c.q1avg) + '</td><td>' + chip(c.q2avg) + '</td><td>' + chip(c.q3avg) + '</td><td>' + chip(c.q4avg) + '</td></tr>');
 
-    courses.forEach((c, i) => { const o = document.createElement('option'); o.value = i; o.textContent = c.name; sel.appendChild(o); });
-    document.getElementById('wi-result').innerHTML = '';
     populateAolCourse();
     document.getElementById('aol-area').innerHTML = '';
     // Refresh cumGPA if that tab is active
     if (sessionStorage.getItem('gf_section') === 'cumgpa') setTimeout(renderCumGPA, 0);
-  }
-
-  /* ── What-if ── */
-  ['wi-grade','wi-course','wi-quarter'].forEach(id => document.getElementById(id).addEventListener('input', calcWhatIf));
-  function calcWhatIf() {
-    const qSel    = document.getElementById('wi-quarter');
-    const cSel    = document.getElementById('wi-course');
-    const newGrade = parseFloat(document.getElementById('wi-grade').value);
-    const res      = document.getElementById('wi-result');
-    if (!cSel.options.length || isNaN(newGrade) || newGrade < 0 || newGrade > 100) { res.innerHTML = ''; return; }
-    const quarter = qSel.value;           // 'q1' | 'q2' | 'q3' | 'q4'
-    const qField  = quarter + 'avg';      // 'q1avg' | 'q2avg' | 'q3avg' | 'q4avg'
-    const qLabel  = qSel.options[qSel.selectedIndex].text;
-    const idx     = parseInt(cSel.value);
-    const mod     = courseData.map((c, i) => i === idx ? Object.assign({}, c, { [qField]: newGrade }) : c);
-    const bef     = yearGPA(courseData), aft = yearGPA(mod);
-    const diff    = (bef !== null && aft !== null) ? (aft - bef >= 0 ? '+' : '') + (aft - bef).toFixed(2) : '';
-    const semNote = (quarter === 'q1' || quarter === 'q2') ? ' · affects Sem 1' : ' · affects Sem 2';
-    res.innerHTML = qLabel + ' what-if: <span class="hi">' + (aft !== null ? aft.toFixed(2) : '—') + '</span> year GPA <span class="diff">(' + diff + ' from ' + (bef !== null ? bef.toFixed(2) : '—') + semNote + ')</span>';
   }
 
   /* ── AOL What-if ── */
@@ -823,7 +791,6 @@
     tbody.querySelectorAll('tr.aol-row').forEach(row => {
       const hyp = row.querySelector('.aol-hyp-score');
       if (hyp) {
-        // Hypothetical row: two inputs
         const s = parseFloat(hyp.value);
         const t = parseFloat(row.querySelector('.aol-hyp-total').value);
         if (!isNaN(s) && !isNaN(t) && t > 0) { totalScore += s; totalPts += t; count++; }
@@ -837,11 +804,53 @@
     });
 
     if (count === 0 || totalPts === 0) {
-      resEl.innerHTML = '<span style="color:var(--ink-4)">Modify scores above or add a hypothetical AOL to see your projected grade.</span>';
+      resEl.innerHTML = '<p style="color:var(--ink-4);font-size:13px">Modify scores above or add a hypothetical AOL to see your projected grade.</p>';
       return;
     }
+
     const pct = (totalScore / totalPts) * 100;
-    resEl.innerHTML = 'Projected AOL grade: <span class="hi">' + pct.toFixed(2) + '%</span> <span class="diff">(' + count + ' AOL' + (count !== 1 ? 's' : '') + ' · ' + totalScore.toFixed(1) + ' / ' + totalPts.toFixed(1) + ' pts)</span>';
+
+    // Build a modified courseData where this course's quarter grade = the hypothetical AOL %
+    const quarter  = document.getElementById('aol-quarter').value;   // 'q1'|'q2'|'q3'|'q4'
+    const qField   = quarter + 'avg';
+    const courseSel = document.getElementById('aol-course');
+    const courseName = courseSel.value;
+    const mod = courseData.map(c => {
+      const match = c.name === courseName
+        || c.name.toLowerCase().replace(/\s+s[12]\s*$/i,'') === courseName.toLowerCase().replace(/\s+s[12]\s*$/i,'');
+      return match ? Object.assign({}, c, { [qField]: pct }) : c;
+    });
+
+    const sem     = (quarter === 'q1' || quarter === 'q2') ? 1 : 2;
+    const semBef  = semGPA(courseData, sem),  semAft  = semGPA(mod, sem);
+    const yearBef = yearGPA(courseData),       yearAft = yearGPA(mod);
+
+    function fmtDiff(bef, aft) {
+      if (bef === null || aft === null) return '';
+      const d = aft - bef;
+      const sign = d >= 0 ? '+' : '';
+      const cls  = d > 0 ? 'up' : d < 0 ? 'dn' : '';
+      return '<span class="aol-result-diff ' + cls + '">' + sign + d.toFixed(3) + '</span>';
+    }
+
+    resEl.innerHTML =
+      '<div class="aol-result-grid">'
+      + '<div class="aol-result-row">'
+      +   '<span class="aol-result-label">Projected AOL</span>'
+      +   '<span class="aol-result-val primary">' + pct.toFixed(2) + '%</span>'
+      +   '<span class="aol-result-diff" style="font-size:11px;color:var(--ink-4)">' + count + ' AOL' + (count !== 1 ? 's' : '') + ' · ' + totalScore.toFixed(1) + ' / ' + totalPts.toFixed(1) + ' pts</span>'
+      + '</div>'
+      + '<div class="aol-result-row">'
+      +   '<span class="aol-result-label">Semester ' + sem + ' GPA</span>'
+      +   '<span class="aol-result-val">' + (semAft !== null ? semAft.toFixed(3) : '—') + '</span>'
+      +   fmtDiff(semBef, semAft)
+      + '</div>'
+      + '<div class="aol-result-row">'
+      +   '<span class="aol-result-label">Year GPA</span>'
+      +   '<span class="aol-result-val">' + (yearAft !== null ? yearAft.toFixed(3) : '—') + '</span>'
+      +   fmtDiff(yearBef, yearAft)
+      + '</div>'
+      + '</div>';
   }
 
   document.getElementById('aol-quarter').addEventListener('change', renderAolTable);
