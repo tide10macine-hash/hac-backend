@@ -246,6 +246,8 @@
     .score-chip { font-family:'DM Mono',monospace; font-size:12px; font-weight:600; padding:2px 8px; border-radius:5px; display:inline-block; }
     .score-pct { font-size:10.5px; color:var(--ink-4); margin-left:4px; }
     .assign-empty { padding:12px 10px; font-size:12.5px; color:var(--ink-4); text-align:center; }
+    .assign-group td { padding:8px 10px 4px; font-size:10px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--ink-4); border-bottom:none; background:var(--surface-2); }
+    .assign-divider td { padding:0; height:0; border-bottom:1.5px dashed var(--border-2) !important; background:transparent; }
 
     @media (max-width:560px) {
       .gpa-strip { grid-template-columns:1fr 1fr; }
@@ -1518,6 +1520,21 @@
     return null;
   }
 
+  function _assignRow(a) {
+    const ratio = (a.score !== null && a.total > 0) ? a.score / a.total : null;
+    const cc = ratio === null ? 'g-null' : ratio >= .9 ? 'grade-chip ga' : ratio >= .8 ? 'grade-chip gb' : ratio >= .7 ? 'grade-chip gc' : 'grade-chip gd';
+    const pct = ratio !== null ? ' <span class="score-pct">(' + (ratio * 100).toFixed(1) + '%)</span>' : '';
+    const sc = a.score !== null
+      ? '<span class="' + cc + '">' + a.score + '</span>' + (a.total ? ' <span style="color:var(--ink-4);font-size:11px">/ ' + a.total + '</span>' : '') + pct
+      : '<span class="g-null">' + (a.raw || '—') + '</span>';
+    return '<tr>'
+      + '<td style="color:var(--ink-3);font-size:11.5px;white-space:nowrap">' + (a.dateDue || '—') + '</td>'
+      + '<td><span class="assign-name">' + a.name + '</span></td>'
+      + '<td><span class="assign-cat">' + (a.category || '') + '</span></td>'
+      + '<td style="text-align:right">' + sc + '</td>'
+      + '</tr>';
+  }
+
   function renderAssignments(el, assignments) {
     el.className = 'assign-inner';
     if (!assignments.length) {
@@ -1525,23 +1542,26 @@
       return;
     }
     const sorted = [...assignments].sort((a, b) => new Date(b.dateDue) - new Date(a.dateDue));
-    const rows = sorted.map(a => {
-      const ratio = (a.score !== null && a.total > 0) ? a.score / a.total : null;
-      const cc = ratio === null ? 'g-null' : ratio >= .9 ? 'grade-chip ga' : ratio >= .8 ? 'grade-chip gb' : ratio >= .7 ? 'grade-chip gc' : 'grade-chip gd';
-      const pct = ratio !== null ? ' <span class="score-pct">(' + (ratio * 100).toFixed(1) + '%)</span>' : '';
-      const sc = a.score !== null
-        ? '<span class="' + cc + '">' + a.score + '</span>' + (a.total ? ' <span style="color:var(--ink-4);font-size:11px">/ ' + a.total + '</span>' : '') + pct
-        : '<span class="g-null">' + (a.raw || '—') + '</span>';
-      return '<tr>'
-        + '<td style="color:var(--ink-3);font-size:11.5px;white-space:nowrap">' + (a.dateDue || '—') + '</td>'
-        + '<td><span class="assign-name">' + a.name + '</span></td>'
-        + '<td><span class="assign-cat">' + (a.category || '') + '</span></td>'
-        + '<td style="text-align:right">' + sc + '</td>'
-        + '</tr>';
-    }).join('');
+    const isAOL = a => a.category && a.category.toLowerCase().includes('assessment of learning');
+    const aols  = sorted.filter(isAOL);
+    const rest  = sorted.filter(a => !isAOL(a));
+
+    // Assessment of Learning on top, everything else (progress checks) below,
+    // separated by a dashed divider.
+    let body = '';
+    if (aols.length) {
+      body += '<tr class="assign-group"><td colspan="4">Assessments of Learning</td></tr>';
+      body += aols.map(_assignRow).join('');
+    }
+    if (rest.length) {
+      if (aols.length) body += '<tr class="assign-divider"><td colspan="4"></td></tr>';
+      body += '<tr class="assign-group"><td colspan="4">Progress Checks</td></tr>';
+      body += rest.map(_assignRow).join('');
+    }
+
     el.innerHTML = '<table class="assign-table">'
       + '<thead><tr><th>Due</th><th>Assignment</th><th>Category</th><th style="text-align:right">Score</th></tr></thead>'
-      + '<tbody>' + rows + '</tbody></table>';
+      + '<tbody>' + body + '</tbody></table>';
   }
 
   /* ── Inactivity auto-logout (10 min) ── */
