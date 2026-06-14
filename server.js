@@ -643,90 +643,6 @@ app.post('/api/teachers', async (req, res) => {
   }
 });
 
-// ── DEBUG (temporary): why aren't teacher photos matching? ────────────────────
-app.post('/api/debug-staff', async (req, res) => {
-  const { username, password } = req.body || {};
-  if (!username || !password) return res.status(400).json({ error: 'creds required' });
-  const client = makeClient();
-  try {
-    await login(client, username, password);
-    const teachers = await getTeachersData(client);
-    const wantEmails = teachers.map(t => (t.email || '').toLowerCase().trim()).filter(Boolean);
-    let campus = '';
-    try { campus = (parseStudentInfo((await client.get(INFO_URL)).data).campus) || ''; } catch (_) {}
-
-    // (A) Read how staff.js builds the campus/directory params.
-    const staffJs = {};
-    try {
-      const sj = await axios.get('https://static.friscoisd.org/js/schools/global/staff.js', { headers: { 'User-Agent': UA }, timeout: 12000, validateStatus: () => true });
-      const body = String(sj.data);
-      const gi = body.indexOf('CampusStaffDirectory');
-      staffJs.aroundGet = gi >= 0 ? body.slice(Math.max(0, gi - 1200), gi + 200).replace(/\s+/g, ' ') : 'not found';
-      staffJs.varAssigns = [...new Set((body.match(/(?:var|let|const)\s+(?:c|d|campus|directory)\b[^;]{0,90}/g) || []))].slice(0, 20);
-      staffJs.pathnameUse = [...new Set((body.match(/(?:location|pathname|getAttribute|data-|\.attr\()[^;{]{0,80}/g) || []))].slice(0, 20);
-    } catch (e) { staffJs.error = e.message; }
-
-    // (B) Inline scripts on the staff page (campus often set here).
-    let pageInline = [];
-    try {
-      const pg = await axios.get(STAFF_DIR, { headers: { 'User-Agent': UA }, timeout: 12000, validateStatus: () => true });
-      const $ = cheerio.load(String(pg.data));
-      $('script:not([src])').each((_, s) => { const t = ($(s).html() || '').trim(); if (t) pageInline.push(t.slice(0, 500)); });
-      pageInline = pageInline.slice(0, 8);
-    } catch (e) { pageInline = ['err:' + e.message]; }
-
-    // (C) Try API candidates; only stop on REAL data (a record with an Email).
-    const extra = ['reedy', 'high-school/reedy', 'reedy-hs', 'rhs', 'reedy_high_school'];
-    const combos = [];
-    for (const c of [...new Set([...campusCandidates(campus), ...extra])]) for (const d of ['staff', 'Staff']) combos.push({ campus: c, directory: d });
-    const tries = [];
-    for (const cmb of combos.slice(0, 22)) {
-      const url = `${STAFF_API}?campus=${encodeURIComponent(cmb.campus)}&directory=${encodeURIComponent(cmb.directory)}&pow=false`;
-      const info = { campus: cmb.campus, directory: cmb.directory };
-      try {
-        const r = await axios.get(url, { timeout: 12000, headers: { 'User-Agent': UA, Accept: 'application/json, text/plain, */*' }, validateStatus: () => true });
-        let arr = r.data;
-        if (typeof arr === 'string') { try { arr = JSON.parse(arr); } catch (_) { arr = null; } }
-        info.status = r.status;
-        info.count = Array.isArray(arr) ? arr.length : 0;
-        info.realCount = Array.isArray(arr) ? arr.filter(s => s && s.Email).length : 0;
-        if (Array.isArray(arr) && arr.length) {
-          info.errors = [...new Set(arr.map(s => s && s.Error).filter(Boolean))].slice(0, 2);
-          const first = arr.find(s => s && s.Email) || arr[0];
-          info.sample = { FirstName: first.FirstName, LastName: first.LastName, Email: first.Email, Photo: first.Photo };
-          const emails = new Set(arr.map(s => String(s.Email || '').toLowerCase().trim()));
-          info.matched = wantEmails.filter(e => emails.has(e));
-        } else {
-          info.bodyHead = (typeof r.data === 'string' ? r.data : JSON.stringify(r.data)).slice(0, 160);
-        }
-      } catch (e) { info.error = e.message; }
-      tries.push(info);
-      if (info.realCount > 0) break;
-    }
-    res.json({ staffApi: STAFF_API, campusFromRegistration: campus, teacherEmails: wantEmails, staffJs, pageInline, tries });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
-});
-
-app.get('/debug-staff', (_req, res) => {
-  res.set('Content-Type', 'text/html').send(`<!doctype html><html><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1"><title>Staff Photos Debug</title>
-<style>body{font:14px system-ui,sans-serif;margin:24px;max-width:920px}
-input{padding:9px;margin:5px 0;width:280px;display:block;border:1px solid #ccc;border-radius:6px}
-button{padding:9px 18px;margin-top:10px;border:0;border-radius:6px;background:#3d5aff;color:#fff;font-size:14px;cursor:pointer}
-pre{white-space:pre-wrap;word-break:break-word;background:#0b1021;color:#bfe3ff;padding:14px;border-radius:8px;font-size:12px;margin-top:14px}</style>
-</head><body><h2>Teacher Photos — why not matching?</h2>
-<p>Enter your HAC login and run. Paste the result back to your developer.</p>
-<input id="u" placeholder="HAC username" autocomplete="off">
-<input id="p" type="password" placeholder="HAC password" autocomplete="off">
-<button id="go">Run</button><pre id="out">(results appear here)</pre>
-<script>document.getElementById('go').onclick=async function(){var o=document.getElementById('out');o.textContent='Running…';
-try{var r=await fetch('/api/debug-staff',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:document.getElementById('u').value,password:document.getElementById('p').value})});
-o.textContent=JSON.stringify(await r.json(),null,2);}catch(e){o.textContent='ERROR: '+e.message;}};</script>
-</body></html>`);
-});
-
 // ─────────────────────────────────────────────────────────────────────────────
 // DIAGNOSTIC ENDPOINT — dumps raw table structure for debugging
 // ─────────────────────────────────────────────────────────────────────────────
@@ -988,39 +904,48 @@ let _staffDirCache = null; // { ts, byEmail, byName }
 
 function _normName(s) { return (s || '').toLowerCase().replace(/[^a-z]+/g, ' ').trim(); }
 
-function campusCandidates(campusName) {
-  const list = ['reedy-high-school', 'reedy', 'reedyhighschool', 'Reedy High School'];
+// The staff API wants campus=<ABBREVIATION> (e.g. "RHS") and directory=<slug>
+// (e.g. "reedy-high-school") — exactly what the staff page calls:
+//   getDirectory("RHS","reedy-high-school")
+// Derive both from the student's campus name, with Reedy as a final fallback.
+function staffApiCandidates(campusName) {
+  const pairs = [];
   const c = (campusName || '').trim();
   if (c) {
-    list.unshift(c, c.toLowerCase().replace(/\s+/g, '-'), c.toLowerCase().split(/\s+/)[0], c.toLowerCase().replace(/\s+/g, ''));
+    const abbr = c.split(/\s+/).map(w => w[0] || '').join('').toUpperCase();       // Reedy High School -> RHS
+    const slug = c.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''); // -> reedy-high-school
+    pairs.push({ campus: abbr, directory: slug });
+    pairs.push({ campus: abbr, directory: 'staff' });
+    pairs.push({ campus: slug, directory: 'staff' });
   }
-  return [...new Set(list.filter(Boolean))];
+  pairs.push({ campus: 'RHS', directory: 'reedy-high-school' });
+  pairs.push({ campus: 'RHS', directory: 'staff' });
+  const seen = new Set();
+  return pairs.filter(p => { const k = p.campus + '|' + p.directory; if (!p.campus || seen.has(k)) return false; seen.add(k); return true; });
 }
 
 async function fetchStaffDirectory(campusName) {
   if (_staffDirCache && Date.now() - _staffDirCache.ts < 6 * 3600 * 1000) return _staffDirCache;
-  for (const campus of campusCandidates(campusName)) {
-    for (const directory of ['staff', 'Staff']) {
-      try {
-        const r = await axios.get(STAFF_API, {
-          params: { campus, directory, pow: false }, timeout: 12000,
-          headers: { 'User-Agent': UA, Accept: 'application/json, text/plain, */*' }, validateStatus: () => true,
-        });
-        let arr = r.data;
-        if (typeof arr === 'string') { try { arr = JSON.parse(arr); } catch { arr = null; } }
-        if (!Array.isArray(arr) || !arr.some(s => s && s.Email && s.Photo)) continue;
-        const byEmail = {}, byName = {};
-        arr.forEach(s => {
-          if (!s || !s.Photo) return;
-          if (s.Email) byEmail[String(s.Email).toLowerCase().trim()] = s.Photo;
-          const nm = _normName((s.FirstName || '') + ' ' + (s.LastName || ''));
-          if (nm) byName[nm] = s.Photo;
-        });
-        _staffDirCache = { ts: Date.now(), byEmail, byName };
-        console.log(`[staff] directory loaded (campus=${campus}, ${arr.length} staff)`);
-        return _staffDirCache;
-      } catch (_) { /* try next combo */ }
-    }
+  for (const { campus, directory } of staffApiCandidates(campusName)) {
+    try {
+      const r = await axios.get(STAFF_API, {
+        params: { campus, directory, pow: false }, timeout: 12000,
+        headers: { 'User-Agent': UA, Accept: 'application/json, text/plain, */*' }, validateStatus: () => true,
+      });
+      let arr = r.data;
+      if (typeof arr === 'string') { try { arr = JSON.parse(arr); } catch { arr = null; } }
+      if (!Array.isArray(arr) || !arr.some(s => s && s.Email && s.Photo)) continue;
+      const byEmail = {}, byName = {};
+      arr.forEach(s => {
+        if (!s || !s.Photo) return;
+        if (s.Email) byEmail[String(s.Email).toLowerCase().trim()] = s.Photo;
+        const nm = _normName((s.FirstName || '') + ' ' + (s.LastName || ''));
+        if (nm) byName[nm] = s.Photo;
+      });
+      _staffDirCache = { ts: Date.now(), byEmail, byName };
+      console.log(`[staff] directory loaded (campus=${campus}, directory=${directory}, ${arr.length} staff)`);
+      return _staffDirCache;
+    } catch (_) { /* try next pair */ }
   }
   console.warn('[staff] no working directory combo found');
   return null;
