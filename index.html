@@ -145,6 +145,21 @@
     .wi-result .hi { font-weight:600; color:var(--green); font-family:'DM Mono',monospace; }
     .wi-result .diff { font-size:12px; color:var(--ink-4); margin-left:6px; }
 
+    /* ── AOL What-if ── */
+    .aol-table { width:100%; border-collapse:collapse; margin-top:12px; }
+    .aol-table th { font-size:10px; font-weight:600; letter-spacing:.07em; text-transform:uppercase; color:var(--ink-4); padding:7px 10px; border-bottom:1px solid var(--border); text-align:left; white-space:nowrap; }
+    .aol-table td { padding:8px 10px; font-size:13px; border-bottom:1px solid var(--border); vertical-align:middle; }
+    .aol-table tbody tr:last-child td { border-bottom:none; }
+    .aol-table tbody tr:hover td { background:rgba(61,90,255,.03); }
+    .aol-name { font-weight:500; color:var(--ink); }
+    .aol-ungraded .aol-name { color:var(--ink-4); font-style:italic; }
+    .aol-score-input { font-family:'DM Mono',monospace; font-size:13px; width:70px; padding:5px 8px; border:1.5px solid var(--border-2); border-radius:6px; background:var(--surface); color:var(--ink); outline:none; text-align:center; transition:border-color .15s; }
+    .aol-score-input:focus { border-color:var(--accent); box-shadow:0 0 0 2px rgba(61,90,255,.1); }
+    .aol-score-input:disabled { background:var(--surface-2); color:var(--ink-4); cursor:not-allowed; border-color:var(--border); }
+    .aol-add-btn { margin-top:10px; font-family:'Instrument Sans',sans-serif; font-size:13px; font-weight:600; padding:8px 16px; border:1.5px dashed var(--border-2); border-radius:var(--r); background:transparent; color:var(--ink-3); cursor:pointer; transition:all .15s; }
+    .aol-add-btn:hover { border-color:var(--accent); color:var(--accent); background:var(--accent-dim); }
+    .aol-hyp-badge { font-size:10.5px; font-weight:600; padding:2px 7px; border-radius:4px; background:var(--accent-dim); color:var(--accent); margin-left:6px; letter-spacing:.03em; }
+
     /* ── TRANSCRIPT ── */
     .tr-year-block { background:var(--surface); border:1px solid var(--border); border-radius:var(--r-lg); margin-bottom:1.25rem; overflow:hidden; }
     .tr-year-header { display:flex; align-items:center; gap:12px; padding:14px 18px; cursor:pointer; user-select:none; border-bottom:1px solid transparent; transition:background .12s; flex-wrap:wrap; }
@@ -391,6 +406,21 @@
           <input type="number" id="wi-grade" placeholder="Hypothetical grade" min="0" max="100" step="1" />
         </div>
         <div class="wi-result" id="wi-result"></div>
+      </div>
+
+      <div class="whatif-card" id="aol-wi-card">
+        <h3>AOL Grade Calculator</h3>
+        <p class="whatif-desc">Hypothetically modify or add Assessment of Learning scores to see your projected course grade. Ungraded AOLs are excluded until you enter a score.</p>
+        <div class="wi-row">
+          <select id="aol-quarter">
+            <option value="q1">Quarter 1</option>
+            <option value="q2">Quarter 2</option>
+            <option value="q3">Quarter 3</option>
+            <option value="q4" selected>Quarter 4</option>
+          </select>
+          <select id="aol-course"><option value="" disabled selected>Select course…</option></select>
+        </div>
+        <div id="aol-area"></div>
       </div>
 
     </div>
@@ -650,6 +680,8 @@
 
     courses.forEach((c, i) => { const o = document.createElement('option'); o.value = i; o.textContent = c.name; sel.appendChild(o); });
     document.getElementById('wi-result').innerHTML = '';
+    populateAolCourse();
+    document.getElementById('aol-area').innerHTML = '';
     // Refresh cumGPA if that tab is active
     if (sessionStorage.getItem('gf_section') === 'cumgpa') setTimeout(renderCumGPA, 0);
   }
@@ -672,6 +704,132 @@
     const semNote = (quarter === 'q1' || quarter === 'q2') ? ' · affects Sem 1' : ' · affects Sem 2';
     res.innerHTML = qLabel + ' what-if: <span class="hi">' + (aft !== null ? aft.toFixed(2) : '—') + '</span> year GPA <span class="diff">(' + diff + ' from ' + (bef !== null ? bef.toFixed(2) : '—') + semNote + ')</span>';
   }
+
+  /* ── AOL What-if ── */
+  let _aolExtraCount = 0;
+
+  function populateAolCourse() {
+    const sel = document.getElementById('aol-course');
+    sel.innerHTML = '';
+    const ph = document.createElement('option');
+    ph.value = ''; ph.disabled = true; ph.selected = true; ph.textContent = 'Select course…';
+    sel.appendChild(ph);
+    if (!_assignByClass) return;
+    Object.keys(_assignByClass).sort().forEach(k => {
+      const o = document.createElement('option'); o.value = k; o.textContent = k; sel.appendChild(o);
+    });
+  }
+
+  function renderAolTable() {
+    const area = document.getElementById('aol-area');
+    _aolExtraCount = 0;
+    const quarter = document.getElementById('aol-quarter').value;
+    const courseSel = document.getElementById('aol-course');
+    const courseName = courseSel.value;
+    if (!courseName || !_assignByClass || !_assignByClass[courseName]) { area.innerHTML = ''; return; }
+
+    const allAssigns = (_assignByClass[courseName][quarter] || []);
+    const aols = allAssigns.filter(a => a.category && a.category.toLowerCase().includes('assessment of learning'));
+
+    if (!aols.length) {
+      area.innerHTML = '<div style="padding:14px 0;font-size:13px;color:var(--ink-4)">No Assessment of Learning assignments found for this quarter.</div>';
+      return;
+    }
+
+    let rows = '';
+    aols.forEach((a, i) => {
+      const hasGrade = a.score !== null && a.total !== null && a.total > 0;
+      const rowCls = hasGrade ? 'aol-row' : 'aol-row aol-ungraded';
+      const scoreVal = hasGrade ? a.score : '';
+      const totalVal = a.total !== null ? a.total : '';
+      const pct = hasGrade ? ((a.score / a.total) * 100).toFixed(1) + '%' : '—';
+      const excNote = !hasGrade ? '<span style="font-size:11px;color:var(--ink-4);margin-left:7px">(ungraded — excluded)</span>' : '';
+      rows += `<tr class="${rowCls}">
+        <td><span class="aol-name">${_esc(a.name)}</span>${excNote}</td>
+        <td><input class="aol-score-input" type="number" min="0" step="0.1" value="${scoreVal}" placeholder="—" ${!hasGrade ? 'disabled' : ''} data-total="${totalVal}" /></td>
+        <td style="text-align:center;font-family:'DM Mono',monospace;font-size:13px;color:var(--ink-3)">${totalVal !== '' ? totalVal : '—'}</td>
+        <td style="text-align:center" class="aol-pct-cell" style="font-family:'DM Mono',monospace;font-size:12px">${pct}</td>
+      </tr>`;
+    });
+
+    area.innerHTML = `<table class="aol-table">
+      <thead><tr><th>Assignment</th><th>Score</th><th style="text-align:center">/ Total</th><th style="text-align:center">%</th></tr></thead>
+      <tbody id="aol-tbody">${rows}</tbody>
+    </table>
+    <button class="aol-add-btn" id="aol-add-btn">+ Add Hypothetical AOL</button>
+    <div class="wi-result" id="aol-result" style="margin-top:10px"></div>`;
+
+    area.querySelectorAll('.aol-score-input').forEach(inp => {
+      inp.addEventListener('input', () => { _aolUpdatePct(inp); calcAolGrade(); });
+    });
+    document.getElementById('aol-add-btn').addEventListener('click', _aolAddRow);
+    calcAolGrade();
+  }
+
+  function _aolUpdatePct(inp) {
+    const row = inp.closest('tr');
+    const total = parseFloat(inp.dataset.total || inp.closest('tr').querySelectorAll('input')[1]?.value);
+    const score = parseFloat(inp.value);
+    const pctCell = row.querySelector('.aol-pct-cell');
+    if (pctCell) pctCell.textContent = (!isNaN(score) && !isNaN(total) && total > 0) ? ((score / total) * 100).toFixed(1) + '%' : '—';
+  }
+
+  function _aolAddRow() {
+    _aolExtraCount++;
+    const tbody = document.getElementById('aol-tbody');
+    if (!tbody) return;
+    const tr = document.createElement('tr');
+    tr.className = 'aol-row';
+    tr.innerHTML = `<td><span class="aol-name" style="color:var(--accent)">Hypothetical AOL</span><span class="aol-hyp-badge">#${_aolExtraCount}</span></td>
+      <td><input class="aol-score-input aol-hyp-score" type="number" min="0" step="0.1" placeholder="Score" /></td>
+      <td style="text-align:center"><input class="aol-score-input aol-hyp-total" type="number" min="0.1" step="0.1" placeholder="Total" /></td>
+      <td style="text-align:center" class="aol-pct-cell">—</td>`;
+    tbody.appendChild(tr);
+    const sInp = tr.querySelector('.aol-hyp-score');
+    const tInp = tr.querySelector('.aol-hyp-total');
+    function upd() {
+      const s = parseFloat(sInp.value), t = parseFloat(tInp.value);
+      tr.querySelector('.aol-pct-cell').textContent = (!isNaN(s) && !isNaN(t) && t > 0) ? ((s/t)*100).toFixed(1)+'%' : '—';
+      calcAolGrade();
+    }
+    sInp.addEventListener('input', upd);
+    tInp.addEventListener('input', upd);
+    sInp.focus();
+  }
+
+  function calcAolGrade() {
+    const resEl = document.getElementById('aol-result');
+    const tbody = document.getElementById('aol-tbody');
+    if (!resEl || !tbody) return;
+
+    let totalScore = 0, totalPts = 0, count = 0;
+
+    tbody.querySelectorAll('tr.aol-row').forEach(row => {
+      const hyp = row.querySelector('.aol-hyp-score');
+      if (hyp) {
+        // Hypothetical row: two inputs
+        const s = parseFloat(hyp.value);
+        const t = parseFloat(row.querySelector('.aol-hyp-total').value);
+        if (!isNaN(s) && !isNaN(t) && t > 0) { totalScore += s; totalPts += t; count++; }
+      } else {
+        const inp = row.querySelector('.aol-score-input');
+        if (!inp || inp.disabled) return;
+        const s = parseFloat(inp.value);
+        const t = parseFloat(inp.dataset.total);
+        if (!isNaN(s) && !isNaN(t) && t > 0) { totalScore += s; totalPts += t; count++; }
+      }
+    });
+
+    if (count === 0 || totalPts === 0) {
+      resEl.innerHTML = '<span style="color:var(--ink-4)">Modify scores above or add a hypothetical AOL to see your projected grade.</span>';
+      return;
+    }
+    const pct = (totalScore / totalPts) * 100;
+    resEl.innerHTML = 'Projected AOL grade: <span class="hi">' + pct.toFixed(2) + '%</span> <span class="diff">(' + count + ' AOL' + (count !== 1 ? 's' : '') + ' · ' + totalScore.toFixed(1) + ' / ' + totalPts.toFixed(1) + ' pts)</span>';
+  }
+
+  document.getElementById('aol-quarter').addEventListener('change', renderAolTable);
+  document.getElementById('aol-course').addEventListener('change', renderAolTable);
 
   /* ── Transcript load ── */
   async function loadTranscript() {
