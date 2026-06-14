@@ -380,10 +380,23 @@ function parseStudentInfo(html) {
 // ─────────────────────────────────────────────────────────────────────────────
 // Fetch + merge all grade data for one logged-in session → { student, courses, _debug }.
 async function getGradesData(client) {
-    // ── 1. Single report card page load — parse ALL quarters at once ──────
-    const rcRes = await client.get(RC_URL, {
-      headers: { Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8' },
-    });
+    // Fetch the three source pages in parallel. The Assignments page is used for
+    // BOTH the period-value map and live grades, so fetch it once and share it.
+    const _h = { Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8' };
+    const [rcR, cwR, infoR] = await Promise.allSettled([
+      client.get(RC_URL,   { headers: _h }),
+      client.get(CW_URL,   { headers: _h }),
+      client.get(INFO_URL, { headers: _h }),
+    ]);
+    const rcData   = rcR.status   === 'fulfilled' ? rcR.value.data   : '';
+    const cwData   = cwR.status   === 'fulfilled' ? cwR.value.data   : '';
+    const infoData = infoR.status === 'fulfilled' ? infoR.value.data : '';
+    if (rcR.status   !== 'fulfilled') console.error('[grades RC]',   rcR.reason?.message);
+    if (cwR.status   !== 'fulfilled') console.error('[grades CW]',   cwR.reason?.message);
+    if (infoR.status !== 'fulfilled') console.error('[grades INFO]', infoR.reason?.message);
+
+    // ── 1. Report card page — parse ALL quarters at once ──────
+    const rcRes = { data: rcData };
 
     // rcRows: Map< rawCourseName, { q1, q2, q3, q4 } >
     const rcRows = parseAllQuartersFromPage(rcRes.data);
@@ -419,17 +432,14 @@ async function getGradesData(client) {
     });
     console.log('[quarterMap]', Object.entries(quarterMap).map(([q,p])=>`${q}="${p.label}"(${p.value})`).join(' '));
 
-    // Fetch Assignments page dropdown to map quarter labels → assignment period values
-    // RC uses values like "1","2","3","4" but Assignments page uses "1-2026","2-2026" etc.
-    let assignPeriodMap = {}; // { '1': '1-2026', '2': '2-2026', ... } keyed by RC label
+    // Map quarter labels → assignment-period values, from the already-fetched
+    // Assignments page. RC uses "1".."4"; Assignments uses "1-2026" etc.
+    let assignPeriodMap = {}; // { '1': '1-2026', … } keyed by RC label
     try {
-      const cwInitRes = await client.get(CW_URL, {
-        headers: { Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8' },
-      });
-      const $cw = cheerio.load(cwInitRes.data);
+      const $cw = cheerio.load(cwData);
       $cw('#plnMain_ddlReportCardRuns option').each((_, el) => {
-        const val   = $cw(el).attr('value') || '';
-        const lbl   = $cw(el).text().trim();
+        const val = $cw(el).attr('value') || '';
+        const lbl = $cw(el).text().trim();
         if (val && val !== 'ALL') assignPeriodMap[lbl] = val;
       });
       console.log('[assignPeriodMap]', JSON.stringify(assignPeriodMap));
@@ -437,11 +447,10 @@ async function getGradesData(client) {
       console.error('[assignPeriodMap]', e.message);
     }
 
-
-    // ── 2. Live grades (current in-progress quarter) ──────────────────────
+    // ── 2. Live grades (current in-progress quarter) — same page, no refetch ──
     let liveGrades = new Map();
     try {
-      liveGrades = parseLiveGrades((await client.get(CW_URL)).data);
+      liveGrades = parseLiveGrades(cwData);
       console.log('[live]', liveGrades.size, 'classes');
     } catch (err) {
       console.error('[live]', err.message);
@@ -450,7 +459,7 @@ async function getGradesData(client) {
     // ── 3. Student info ───────────────────────────────────────────────────
     let student = { name: '', grade: '', campus: '' };
     try {
-      student = parseStudentInfo((await client.get(INFO_URL)).data);
+      student = parseStudentInfo(infoData);
     } catch (err) {
       console.error('[student info]', err.message);
     }
@@ -574,11 +583,14 @@ app.post('/api/bootstrap', async (req, res) => {
     return res.status(status).json({ error: err.message || 'Login failed.' });
   }
 
+  // Warm the staff-directory cache (external API) concurrently with the HAC
+  // fetches so teacher photos don't add a serial round-trip afterward.
   const [gradesR, assignR, transcriptR, teachersR] = await Promise.allSettled([
     getGradesData(client),
     getAssignmentsData(client),
     getTranscriptData(client),
     getTeachersData(client),
+    fetchStaffDirectory('Reedy High School').catch(() => null),
   ]);
 
   const out = { errors: {} };
@@ -1252,42 +1264,51 @@ function switchStrategies($fresh, runName, periodValue) {
 }
 
 // Fetch one grading period's assignments by switching the Report Card Run.
-// Returns { classes, diag }. diag.attempts records every strategy tried.
-async function fetchPeriodData(client, runName, periodValue) {
+// Reuses an already-loaded page ($pre) so we don't re-GET the Assignments page
+// per quarter; only falls back to a fresh GET if the reused viewstate yields
+// nothing. Returns { classes, diag }.
+async function fetchPeriodData(client, runName, periodValue, $pre) {
   const diag = { used: 'none', attempts: [] };
 
-  // Fresh GET so __VIEWSTATE/__EVENTVALIDATION belong to the page we post from.
-  const freshRes = await client.get(CW_URL, {
-    headers: { Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8', Referer: HAC_BASE },
-  });
-  const $fresh = cheerio.load(freshRes.data);
-
-  let classes = [];
-  for (const strat of switchStrategies($fresh, runName, periodValue)) {
-    let raw;
-    try {
-      const r = await client.post(CW_URL, buildPostBody($fresh, strat.opts), {
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-          'Referer':      CW_URL,
-          'Accept':       'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        },
+  const attemptWith = async ($page) => {
+    let best = [];
+    for (const strat of switchStrategies($page, runName, periodValue)) {
+      let raw;
+      try {
+        const r = await client.post(CW_URL, buildPostBody($page, strat.opts), {
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'Referer':      CW_URL,
+            'Accept':       'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          },
+        });
+        raw = String(r.data);
+      } catch (e) {
+        diag.attempts.push({ strategy: strat.name, error: e.message });
+        continue;
+      }
+      const html  = looksLikeDelta(raw) ? extractHtmlFromDelta(raw) : raw;
+      const c     = parseAssignments(html);
+      const after = findRunSelect(cheerio.load(html));
+      diag.attempts.push({
+        strategy: strat.name,
+        selectedAfter: after ? after.selected : '?',
+        blocks: c.length, assignments: countAssignments(c), rawLen: raw.length,
       });
-      raw = String(r.data);
-    } catch (e) {
-      diag.attempts.push({ strategy: strat.name, error: e.message });
-      continue;
+      if (countAssignments(c) > 0) { diag.used = strat.name; return c; }
+      if (c.length > best.length) best = c;
     }
-    const html  = looksLikeDelta(raw) ? extractHtmlFromDelta(raw) : raw;
-    const c     = parseAssignments(html);
-    const after = findRunSelect(cheerio.load(html));
-    diag.attempts.push({
-      strategy: strat.name,
-      selectedAfter: after ? after.selected : '?',
-      blocks: c.length, assignments: countAssignments(c), rawLen: raw.length,
+    return best;
+  };
+
+  let classes = $pre ? await attemptWith($pre) : [];
+  if (countAssignments(classes) === 0) {
+    // Reused viewstate produced nothing (or none given) — do a real fresh GET.
+    const freshRes = await client.get(CW_URL, {
+      headers: { Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8', Referer: HAC_BASE },
     });
-    if (countAssignments(c) > 0) { classes = c; diag.used = strat.name; break; }
-    if (c.length > classes.length) classes = c; // keep best-so-far if none have rows
+    const fresh = await attemptWith(cheerio.load(freshRes.data));
+    if (countAssignments(fresh) > 0 || classes.length === 0) classes = fresh;
   }
 
   if (countAssignments(classes) === 0) diag.flags = { note: 'no assignments from any strategy' };
@@ -1331,7 +1352,7 @@ async function getAssignmentsData(client) {
       return;
     }
     try {
-      const { classes, diag } = await fetchPeriodData(client, runName, p.value);
+      const { classes, diag } = await fetchPeriodData(client, runName, p.value, $init);
       allData[p.value] = classes;
       debugPerPeriod.push({ value: p.value, label: p.label, ...diag,
         blocks: classes.length, assignments: countAssignments(classes) });
